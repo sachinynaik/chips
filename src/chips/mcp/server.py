@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 
 from chips.compiler.builder import BriefBuilder
 from chips.compiler.compressor import OllamaCompressor
+from chips.compiler.policy import PolicyLoader
 from chips.harvester.embedding import OllamaEmbedder
 from chips.mcp.tools.git import get_recent_commits as _get_recent_commits
 from chips.mcp.tools.memory import search_memory as _search_memory
@@ -54,6 +55,11 @@ def get_recent_commits(limit: int = 10) -> list[dict]:
         conn.close()
 
 
+def _get_policy_loader() -> PolicyLoader:
+    policy_path = os.getenv("CHIPS_POLICY_FILE", "cortex_policy.yaml")
+    return PolicyLoader.from_file(policy_path)
+
+
 @app.tool()
 def get_context_brief(task: str, scope: str | None = None) -> dict:
     """Compile a ranked, compressed context brief for a coding task."""
@@ -61,7 +67,7 @@ def get_context_brief(task: str, scope: str | None = None) -> dict:
     compressor = _get_compressor()
     conn = _get_conn()
     try:
-        builder = BriefBuilder(conn, embedder, compressor)
+        builder = BriefBuilder(conn, embedder, compressor, policy_loader=_get_policy_loader())
         brief = builder.build(task, scope=scope)
     finally:
         conn.close()
@@ -85,4 +91,6 @@ def get_context_brief(task: str, scope: str | None = None) -> dict:
             for s in brief.ranked_signals
         ],
         "retrieved_memories": brief.retrieved.memories,
+        "forbidden_edits": brief.forbidden_edits,
+        "allowed_edits": brief.allowed_edits,
     }

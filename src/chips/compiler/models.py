@@ -35,3 +35,5 @@ class ContextBrief:
     ranked_signals: list[RankedSignal]
     hard_constraints: list[str]
     compressed_context: str
+    forbidden_edits: list[str] = field(default_factory=list)
+    allowed_edits: list[str] = field(default_factory=list)

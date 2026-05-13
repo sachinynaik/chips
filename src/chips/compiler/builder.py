@@ -9,7 +9,8 @@ import psycopg
 
 from chips.compiler.classifier import classify_task
 from chips.compiler.compressor import OllamaCompressor
-from chips.compiler.models import ContextBrief, RankedSignal, RetrievedItems
+from chips.compiler.models import ContextBrief, RetrievedItems
+from chips.compiler.policy import PolicyLoader
 from chips.compiler.ranker import rank_signals
 from chips.compiler.retrieval import retrieve_file_signals, retrieve_memories
 from chips.harvester.embedding import OllamaEmbedder
@@ -21,10 +22,12 @@ class BriefBuilder:
         conn: psycopg.Connection,
         embedder: OllamaEmbedder,
         compressor: OllamaCompressor,
+        policy_loader: PolicyLoader | None = None,
     ) -> None:
         self._conn = conn
         self._embedder = embedder
         self._compressor = compressor
+        self._policy_loader = policy_loader
 
     def build(self, task: str, scope: str | None = None) -> ContextBrief:
         start = time.monotonic()
@@ -37,10 +40,21 @@ class BriefBuilder:
 
         ranked = rank_signals(memories, file_signals)
 
-        hard_constraints = [
+        # Collect policy forbidden/required items
+        forbidden_edits: list[str] = []
+        allowed_edits: list[str] = []
+        if self._policy_loader is not None:
+            for policy in self._policy_loader.for_scope(scope):
+                forbidden_edits.extend(policy.forbidden)
+                allowed_edits.extend(policy.required)
+
+        # Hard constraints = memory invariants/contracts + policy forbidden items
+        memory_constraints = [
             m["content"] for m in memories
             if m.get("type") in ("invariant", "contract")
         ]
+        hard_constraints = memory_constraints + forbidden_edits
+
         soft_items = [
             m["content"] for m in memories
             if m.get("type") not in ("invariant", "contract")
@@ -63,6 +77,8 @@ class BriefBuilder:
             ranked_signals=ranked,
             hard_constraints=hard_constraints,
             compressed_context=compressed,
+            forbidden_edits=forbidden_edits,
+            allowed_edits=allowed_edits,
         )
 
         self._persist(brief)
