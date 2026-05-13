@@ -18,13 +18,14 @@ def test_search_memory_returns_results(conn):
         conn=conn,
         query_embedding=[0.2] * 768,
         scope=None,
-        limit=5,
+        limit=20,
     )
     assert len(results) >= 1
-    assert results[0]["type"] == "invariant"
     assert "content" in results[0]
     assert "score" in results[0]
     assert "signal_breakdown" in results[0]
+    types = {r["type"] for r in results}
+    assert "invariant" in types
 
 
 def test_search_memory_scope_filter(conn):

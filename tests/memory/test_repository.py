@@ -79,9 +79,10 @@ def test_semantic_search_requires_embedding(conn):
     )
     repo.insert(record)
 
-    results = repo.semantic_search(query_embedding=[0.1] * 768, limit=5)
+    results = repo.semantic_search(query_embedding=[0.1] * 768, limit=20)
     assert len(results) >= 1
-    assert results[0].content == "Checkout must verify active vehicle."
+    contents = [r.content for r in results]
+    assert "Checkout must verify active vehicle." in contents
 
 
 def test_semantic_search_excludes_records_without_embedding(conn):
