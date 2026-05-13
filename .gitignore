@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Claude Code session data
+.claude/
+
+# Serena LSP cache (project.yml is committed; cache is not)
+.serena/cache/
+
+# Graphify generated output
+graphify-out/
