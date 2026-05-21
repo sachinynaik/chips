@@ -78,6 +78,58 @@ class DiffSummarizer:
             if low:
                 parts.append(f"Low annotation coverage: {', '.join(low[:3])}")
 
+        if enrichment.security_findings:
+            high = [f for f in enrichment.security_findings if f.get("severity") == "HIGH"]
+            sample = high[:3] if high else enrichment.security_findings[:3]
+            ids = ", ".join(f"{f.get('test_id','?')} {f.get('message','')[:60]}" for f in sample)
+            label = f"HIGH-severity " if high else ""
+            parts.append(f"Bandit {label}security findings: {ids}")
+
+        if enrichment.dead_code_findings:
+            names = [f"{d.get('type','?')}: {d.get('name','?')}" for d in enrichment.dead_code_findings[:4]]
+            parts.append(f"Dead code detected: {', '.join(names)}")
+
+        if enrichment.api_surface_findings:
+            missing_ret = [f for f in enrichment.api_surface_findings if f.get("change_type") == "missing_return_annotation"]
+            undoc = [f for f in enrichment.api_surface_findings if f.get("change_type") == "undocumented_public_api"]
+            notes = []
+            if missing_ret:
+                notes.append(f"{len(missing_ret)} missing return annotations")
+            if undoc:
+                notes.append(f"{len(undoc)} undocumented public symbols")
+            if notes:
+                parts.append(f"API surface issues: {', '.join(notes)}")
+
+        if enrichment.architecture_violations:
+            contracts = list({v.get("contract", "?") for v in enrichment.architecture_violations})
+            parts.append(f"Architecture violations (import-linter): {', '.join(contracts[:3])}")
+
+        if enrichment.clone_findings:
+            parts.append(
+                f"Code clones detected: {len(enrichment.clone_findings)} duplicate block(s) "
+                f"(largest: {max(c.get('lines', 0) for c in enrichment.clone_findings)} lines)"
+            )
+
+        if enrichment.ownership:
+            all_owners = enrichment.ownership.get("all_owners", [])
+            cross = enrichment.ownership.get("cross_team_change", False)
+            if all_owners:
+                parts.append(
+                    f"CODEOWNERS: {', '.join(all_owners[:5])}"
+                    + (" [cross-team change]" if cross else "")
+                )
+
+        if enrichment.line_coverage:
+            files_info = enrichment.line_coverage.get("files", {})
+            uncovered = [
+                p.split("/")[-1]
+                for p, info in files_info.items()
+                if info.get("changed_lines_coverage_pct") is not None
+                and info.get("changed_lines_coverage_pct", 100.0) == 0.0
+            ]
+            if uncovered:
+                parts.append(f"Changed lines with no test coverage: {', '.join(uncovered[:4])}")
+
         if enrichment.diff_content:
             parts.append(f"Diff (truncated):\n{enrichment.diff_content[:2000]}")
 

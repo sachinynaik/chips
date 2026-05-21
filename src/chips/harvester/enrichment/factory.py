@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+from chips.harvester.enrichment.api_surface import GriffeAnalyzer
+from chips.harvester.enrichment.architecture import ImportLinterAnalyzer
+from chips.harvester.enrichment.clones import JscpdAnalyzer
 from chips.harvester.enrichment.cochange import CochangeFetcher
 from chips.harvester.enrichment.code_embed import CodeEmbedder
 from chips.harvester.enrichment.complexity import LizardAnalyzer
+from chips.harvester.enrichment.coverage_reader import CoverageReader
+from chips.harvester.enrichment.dead_code import VultureAnalyzer
 from chips.harvester.enrichment.defect import DefectPredictor
 from chips.harvester.enrichment.git_diff import GitDiffFetcher
 from chips.harvester.enrichment.graphify import GraphifyEnricher
 from chips.harvester.enrichment.joern import JoernAnalyzer
+from chips.harvester.enrichment.ownership import CodeownersParser
 from chips.harvester.enrichment.pipeline import EnrichmentPipeline
 from chips.harvester.enrichment.refactoring import RefactoringDetector
 from chips.harvester.enrichment.scope_memories import ScopeMemoryFetcher
-from chips.harvester.enrichment.semgrep import SemgrepAnalyzer
+from chips.harvester.enrichment.security import BanditAnalyzer
 from chips.harvester.enrichment.semble import SembleEnricher
+from chips.harvester.enrichment.semgrep import SemgrepAnalyzer
 from chips.harvester.enrichment.type_checker import TypeCheckerAnalyzer
 from chips.harvester.extractor import CommitMemoryExtractor
 from chips.harvester.summarizer import DiffSummarizer
@@ -25,11 +32,18 @@ def create_enrichment_pipeline(
     summarizer_model: str = "qwen2.5-coder:7b",
     type_checker_backend: str = "pyrefly",
     pyrefly_config_path: str | None = None,
+    bandit_severity_threshold: str = "LOW",
+    vulture_min_confidence: int = 60,
+    jscpd_min_lines: int = 5,
+    jscpd_min_tokens: int = 50,
 ) -> tuple[EnrichmentPipeline, DiffSummarizer]:
     """Assemble a fully-wired EnrichmentPipeline and DiffSummarizer.
 
-    All enrichers are included; Layer 4 stubs (Joern, RefactoringMiner,
-    DefectPredictor) degrade gracefully until JVM backends are available.
+    All enrichers are included. Optional-dep enrichers (griffe, vulture,
+    bandit, jscpd) degrade gracefully to empty results when the tool is
+    not installed. coverage_reader returns nothing if no .coverage artifact
+    exists. architecture returns nothing if no .importlinter config exists.
+    ownership returns nothing if no CODEOWNERS file exists.
 
     Args:
         repo_path: Absolute path to the git repository root.
@@ -39,6 +53,10 @@ def create_enrichment_pipeline(
         summarizer_model: Ollama model for lesson summarisation.
         type_checker_backend: Type checker to use ("pyrefly").
         pyrefly_config_path: Optional path to pyrefly.toml.
+        bandit_severity_threshold: Minimum severity for bandit findings ("LOW"|"MEDIUM"|"HIGH").
+        vulture_min_confidence: Minimum confidence for vulture dead-code findings (0-100).
+        jscpd_min_lines: Minimum duplicated lines for jscpd to report a clone.
+        jscpd_min_tokens: Minimum duplicated tokens for jscpd to report a clone.
 
     Returns:
         (pipeline, summarizer) — pass both to CommitMemoryExtractor.
@@ -60,6 +78,17 @@ def create_enrichment_pipeline(
             repo_path=repo_path,
             config_path=pyrefly_config_path,
         ),
+        api_surface=GriffeAnalyzer(),
+        dead_code=VultureAnalyzer(min_confidence=vulture_min_confidence),
+        security=BanditAnalyzer(severity_threshold=bandit_severity_threshold),
+        coverage_reader=CoverageReader(repo_path=repo_path),
+        architecture=ImportLinterAnalyzer(repo_path=repo_path),
+        clones=JscpdAnalyzer(
+            repo_path=repo_path,
+            min_lines=jscpd_min_lines,
+            min_tokens=jscpd_min_tokens,
+        ),
+        ownership=CodeownersParser(repo_path=repo_path),
         conn_factory=conn_factory,
     )
     summarizer = DiffSummarizer(base_url=ollama_url, model=summarizer_model)

@@ -2,12 +2,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from chips.harvester.enrichment.factory import create_enriched_extractor, create_enrichment_pipeline
+from chips.harvester.enrichment.api_surface import GriffeAnalyzer
+from chips.harvester.enrichment.architecture import ImportLinterAnalyzer
+from chips.harvester.enrichment.clones import JscpdAnalyzer
 from chips.harvester.enrichment.code_embed import CodeEmbedder
 from chips.harvester.enrichment.complexity import LizardAnalyzer
+from chips.harvester.enrichment.coverage_reader import CoverageReader
+from chips.harvester.enrichment.dead_code import VultureAnalyzer
+from chips.harvester.enrichment.factory import create_enriched_extractor, create_enrichment_pipeline
 from chips.harvester.enrichment.git_diff import GitDiffFetcher
 from chips.harvester.enrichment.graphify import GraphifyEnricher
+from chips.harvester.enrichment.ownership import CodeownersParser
 from chips.harvester.enrichment.pipeline import EnrichmentPipeline
+from chips.harvester.enrichment.security import BanditAnalyzer
 from chips.harvester.enrichment.semgrep import SemgrepAnalyzer
 from chips.harvester.enrichment.semble import SembleEnricher
 from chips.harvester.enrichment.type_checker import TypeCheckerAnalyzer
@@ -159,3 +166,82 @@ def test_create_enriched_extractor_has_summarizer():
 def test_create_enriched_extractor_forwards_kwargs():
     extractor = create_enriched_extractor(**_args(summarizer_model="phi3:mini"))
     assert extractor._summarizer._model == "phi3:mini"
+
+
+# ── New enrichers wired by factory ────────────────────────────────────────────
+
+def test_pipeline_has_griffe_analyzer():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert isinstance(pipeline._api_surface, GriffeAnalyzer)
+
+
+def test_pipeline_has_vulture_analyzer():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert isinstance(pipeline._dead_code, VultureAnalyzer)
+
+
+def test_pipeline_has_bandit_analyzer():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert isinstance(pipeline._security, BanditAnalyzer)
+
+
+def test_pipeline_has_coverage_reader():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert isinstance(pipeline._coverage_reader, CoverageReader)
+
+
+def test_pipeline_has_import_linter():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert isinstance(pipeline._architecture, ImportLinterAnalyzer)
+
+
+def test_pipeline_has_jscpd_analyzer():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert isinstance(pipeline._clones, JscpdAnalyzer)
+
+
+def test_pipeline_has_codeowners_parser():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert isinstance(pipeline._ownership, CodeownersParser)
+
+
+def test_bandit_severity_threshold_configurable():
+    pipeline, _ = create_enrichment_pipeline(**_args(bandit_severity_threshold="HIGH"))
+    assert pipeline._security._threshold == "HIGH"
+
+
+def test_vulture_min_confidence_configurable():
+    pipeline, _ = create_enrichment_pipeline(**_args(vulture_min_confidence=80))
+    assert pipeline._dead_code._min_confidence == 80
+
+
+def test_jscpd_min_lines_configurable():
+    pipeline, _ = create_enrichment_pipeline(**_args(jscpd_min_lines=10))
+    assert pipeline._clones._min_lines == 10
+
+
+def test_jscpd_min_tokens_configurable():
+    pipeline, _ = create_enrichment_pipeline(**_args(jscpd_min_tokens=100))
+    assert pipeline._clones._min_tokens == 100
+
+
+def test_coverage_reader_uses_repo_path():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert pipeline._coverage_reader._repo_path == "/fake/repo"
+
+
+def test_architecture_uses_repo_path():
+    from pathlib import Path
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert pipeline._architecture._repo_path == Path("/fake/repo")
+
+
+def test_jscpd_uses_repo_path():
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert pipeline._clones._repo_path == "/fake/repo"
+
+
+def test_codeowners_uses_repo_path():
+    from pathlib import Path
+    pipeline, _ = create_enrichment_pipeline(**_args())
+    assert pipeline._ownership._repo_path == Path("/fake/repo")

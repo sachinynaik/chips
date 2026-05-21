@@ -3,5 +3,5 @@ project-includes = [
 ]
 python-version = "3.13.0"
 
-# lizard is an optional enrichment dependency; import is guarded by try/except
-ignore-missing-imports = ["lizard"]
+# Optional enrichment deps — all guarded by try/except ImportError
+ignore-missing-imports = ["lizard", "griffe", "vulture"]
