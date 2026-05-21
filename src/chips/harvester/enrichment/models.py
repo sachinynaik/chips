@@ -20,3 +20,7 @@ class EnrichmentResult:
     # DB
     scope_memories: list[dict] = field(default_factory=list)
     cochange_pairs: list[dict] = field(default_factory=list)
+    # Type checker (Layer 1 — configurable backend)
+    type_errors: list[dict] = field(default_factory=list)
+    type_coverage: dict = field(default_factory=dict)
+    type_checker_backend: str = "none"

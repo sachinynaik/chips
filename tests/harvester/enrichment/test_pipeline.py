@@ -91,3 +91,65 @@ def test_pipeline_skips_db_when_no_conn_factory():
     result = pipeline.enrich(_commit(), "auth")
     assert result.scope_memories == []
     assert result.cochange_pairs == []
+
+
+# ── TypeChecker integration ───────────────────────────────────────────────────
+
+def test_pipeline_type_errors_empty_when_no_type_checker():
+    result = _pipeline().enrich(_commit(), "auth")
+    assert result.type_errors == []
+    assert result.type_coverage == {}
+    assert result.type_checker_backend == "none"
+
+
+def test_pipeline_calls_type_checker_when_provided():
+    from chips.harvester.enrichment.type_checker import TypeCheckerAnalyzer
+    tc = MagicMock(spec=TypeCheckerAnalyzer)
+    tc.backend = "pyrefly"
+    tc.analyze.return_value = {"errors": [], "coverage": {}, "backend": "pyrefly"}
+    pipeline = _pipeline()
+    pipeline._type_checker = tc
+    pipeline.enrich(_commit(), "auth")
+    tc.analyze.assert_called_once_with(_commit().files_changed)
+
+
+def test_pipeline_type_errors_populated_from_type_checker():
+    from chips.harvester.enrichment.type_checker import TypeCheckerAnalyzer
+    tc = MagicMock(spec=TypeCheckerAnalyzer)
+    tc.backend = "pyrefly"
+    tc.analyze.return_value = {
+        "errors": [{"code": "bad-return-type", "message": "...", "path": "src/auth/token.py", "line": 5}],
+        "coverage": {},
+        "backend": "pyrefly",
+    }
+    pipeline = _pipeline()
+    pipeline._type_checker = tc
+    result = pipeline.enrich(_commit(), "auth")
+    assert len(result.type_errors) == 1
+    assert result.type_errors[0]["code"] == "bad-return-type"
+
+
+def test_pipeline_type_coverage_populated_from_type_checker():
+    from chips.harvester.enrichment.type_checker import TypeCheckerAnalyzer
+    tc = MagicMock(spec=TypeCheckerAnalyzer)
+    tc.backend = "pyrefly"
+    tc.analyze.return_value = {
+        "errors": [],
+        "coverage": {"src/auth/token.py": {"annotation_completeness": 0.75, "type_completeness": 0.80}},
+        "backend": "pyrefly",
+    }
+    pipeline = _pipeline()
+    pipeline._type_checker = tc
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.type_coverage["src/auth/token.py"]["annotation_completeness"] == 0.75
+
+
+def test_pipeline_backend_recorded_in_result():
+    from chips.harvester.enrichment.type_checker import TypeCheckerAnalyzer
+    tc = MagicMock(spec=TypeCheckerAnalyzer)
+    tc.backend = "pyrefly"
+    tc.analyze.return_value = {"errors": [], "coverage": {}, "backend": "pyrefly"}
+    pipeline = _pipeline()
+    pipeline._type_checker = tc
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.type_checker_backend == "pyrefly"

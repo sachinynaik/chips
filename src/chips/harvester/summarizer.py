@@ -62,6 +62,22 @@ class DiffSummarizer:
             )
             parts.append(f"Files that frequently change together: {pairs_text}")
 
+        if enrichment.type_errors:
+            error_lines = "; ".join(
+                f"{e.get('code', '?')} at line {e.get('line', '?')}: {e.get('message', '')}"
+                for e in enrichment.type_errors[:5]
+            )
+            parts.append(f"Type errors ({enrichment.type_checker_backend}): {error_lines}")
+
+        if enrichment.type_coverage:
+            low = [
+                f"{path.split('/')[-1]} {int(info.get('annotation_completeness', 1.0) * 100)}%"
+                for path, info in enrichment.type_coverage.items()
+                if info.get("annotation_completeness", 1.0) < 0.5
+            ]
+            if low:
+                parts.append(f"Low annotation coverage: {', '.join(low[:3])}")
+
         if enrichment.diff_content:
             parts.append(f"Diff (truncated):\n{enrichment.diff_content[:2000]}")
 

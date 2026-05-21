@@ -74,3 +74,30 @@ def test_build_prompt_includes_complexity_when_high():
     summarizer = DiffSummarizer("http://localhost:11434", "qwen2.5-coder")
     prompt = summarizer._build_prompt(_commit(), enrichment)
     assert "process_payment" in prompt
+
+
+def test_build_prompt_includes_type_errors_when_present():
+    enrichment = _enrichment(
+        type_errors=[{"code": "bad-return-type", "message": "Expected int, got str", "path": "src/auth/token.py", "line": 10}],
+        type_checker_backend="pyrefly",
+    )
+    summarizer = DiffSummarizer("http://localhost:11434", "qwen2.5-coder")
+    prompt = summarizer._build_prompt(_commit(), enrichment)
+    assert "bad-return-type" in prompt
+
+
+def test_build_prompt_omits_type_errors_section_when_empty():
+    enrichment = _enrichment(type_errors=[], type_checker_backend="none")
+    summarizer = DiffSummarizer("http://localhost:11434", "qwen2.5-coder")
+    prompt = summarizer._build_prompt(_commit(), enrichment)
+    assert "Type errors" not in prompt
+
+
+def test_build_prompt_includes_low_coverage_warning():
+    enrichment = _enrichment(
+        type_coverage={"src/auth/token.py": {"annotation_completeness": 0.35, "type_completeness": 0.40}},
+        type_checker_backend="pyrefly",
+    )
+    summarizer = DiffSummarizer("http://localhost:11434", "qwen2.5-coder")
+    prompt = summarizer._build_prompt(_commit(), enrichment)
+    assert "35%" in prompt or "annotation" in prompt.lower()
