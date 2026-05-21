@@ -8,7 +8,11 @@ leak state into each other regardless of which DB backend is used.
 """
 import os
 import pytest
-import psycopg
+try:
+    import psycopg
+    _PSYCOPG_AVAILABLE = True
+except ImportError:
+    _PSYCOPG_AVAILABLE = False
 
 POSTGRES_IMAGE = "pgvector/pgvector:pg16"
 _TEST_DB_URL = os.getenv("CHIPS_TEST_DB_URL")
@@ -66,6 +70,8 @@ def apply_migrations(alembic_url):
 @pytest.fixture()
 def conn(psycopg_url):
     """Isolated connection — all writes are rolled back after the test."""
+    if not _PSYCOPG_AVAILABLE:
+        pytest.skip("psycopg not available")
     connection = psycopg.connect(psycopg_url, autocommit=False)
     try:
         yield connection
