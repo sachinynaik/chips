@@ -23,6 +23,7 @@ class MemoryRecord:
     tags: list[str] = field(default_factory=list)
     evidence_refs: list[dict] = field(default_factory=list)
     confidence: float = 0.8
+    structured_findings: dict = field(default_factory=dict)
     embedding: list[float] | None = None
     id: UUID | None = None
     created_at: datetime | None = None

@@ -50,3 +50,53 @@ def test_existing_skip_merge_still_works():
 def test_existing_skip_empty_message_still_works():
     record = CommitMemoryExtractor().extract(_commit(message=""))
     assert record is None
+
+
+# ---------------------------------------------------------------------------
+# structured_findings integration tests
+# ---------------------------------------------------------------------------
+
+def test_extract_without_enricher_structured_findings_empty():
+    record = CommitMemoryExtractor().extract(_commit())
+    assert record.structured_findings == {}
+
+
+def test_extract_with_enricher_structured_findings_populated():
+    enricher = MagicMock(spec=EnrichmentPipeline)
+    enricher.enrich.return_value = EnrichmentResult(
+        security_findings=[{
+            "test_id": "B602",
+            "severity": "HIGH",
+            "confidence": "HIGH",
+            "line": 10,
+            "message": "shell=True",
+            "file": "f.py",
+            "test_name": "shell",
+        }]
+    )
+    summarizer = MagicMock(spec=DiffSummarizer)
+    summarizer.summarize.return_value = "enriched"
+    record = CommitMemoryExtractor(enricher=enricher, summarizer=summarizer).extract(_commit())
+    assert len(record.structured_findings["security"]) == 1
+
+
+def test_extract_structured_findings_empty_enrichment_gives_empty_dict():
+    enricher = MagicMock(spec=EnrichmentPipeline)
+    enricher.enrich.return_value = EnrichmentResult()
+    summarizer = MagicMock(spec=DiffSummarizer)
+    summarizer.summarize.return_value = "summary"
+    record = CommitMemoryExtractor(enricher=enricher, summarizer=summarizer).extract(_commit())
+    assert record.structured_findings == {}
+
+
+def test_extract_structured_findings_is_dict():
+    # No enricher path
+    record_no_enricher = CommitMemoryExtractor().extract(_commit())
+    assert isinstance(record_no_enricher.structured_findings, dict)
+    # With enricher path
+    enricher = MagicMock(spec=EnrichmentPipeline)
+    enricher.enrich.return_value = EnrichmentResult()
+    summarizer = MagicMock(spec=DiffSummarizer)
+    summarizer.summarize.return_value = "s"
+    record_with_enricher = CommitMemoryExtractor(enricher=enricher, summarizer=summarizer).extract(_commit())
+    assert isinstance(record_with_enricher.structured_findings, dict)

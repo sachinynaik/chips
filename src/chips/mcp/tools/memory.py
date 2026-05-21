@@ -25,6 +25,7 @@ def search_memory(
             "confidence": r.confidence,
             "source": r.source,
             "tags": r.tags,
+            "structured_findings": r.structured_findings,
             "score": None,
             "signal_breakdown": {
                 "semantic": None,

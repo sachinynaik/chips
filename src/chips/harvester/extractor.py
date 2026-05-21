@@ -5,6 +5,7 @@ from collections import Counter
 from chips.compiler.classifier import TaskKind, classify_task
 from chips.harvester.enrichment.models import EnrichmentResult
 from chips.harvester.enrichment.pipeline import EnrichmentPipeline
+from chips.harvester.findings import extract_findings
 from chips.harvester.git_reader import CommitRecord
 from chips.harvester.summarizer import DiffSummarizer
 from chips.memory.models import MemoryRecord, MemoryType
@@ -30,8 +31,10 @@ class CommitMemoryExtractor:
         if self._enricher is not None and self._summarizer is not None:
             enrichment = self._enricher.enrich(commit, scope)
             content = self._summarizer.summarize(commit, enrichment)
+            structured_findings = extract_findings(enrichment)
         else:
             content = commit.message
+            structured_findings = {}
 
         return MemoryRecord(
             type=MemoryType.LESSON,
@@ -40,6 +43,7 @@ class CommitMemoryExtractor:
             tags=tags,
             source=commit.sha,
             author=commit.author,
+            structured_findings=structured_findings,
         )
 
 

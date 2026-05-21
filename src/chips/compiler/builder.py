@@ -13,7 +13,98 @@ from chips.compiler.models import ContextBrief, RetrievedItems
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.ranker import rank_signals
 from chips.compiler.retrieval import retrieve_diffs, retrieve_file_signals, retrieve_memories
+import os
+
 from chips.harvester.embedding import OllamaEmbedder
+
+
+def _extract_brief_signals(
+    memories: list[dict],
+) -> tuple[list[str], list[str]]:
+    """Extract hard_additions and soft_additions from structured_findings in memories.
+
+    hard_additions: HIGH/MEDIUM security findings, architecture violations.
+    soft_additions: dead code, API surface issues, clones, type errors,
+                    uncovered changes, LOW security findings.
+
+    structured_findings schema (produced by chips.harvester.findings.extract_findings):
+      security: list[dict]  — sorted by severity desc
+      dead_code: list[dict]
+      api_surface: list[dict]
+      architecture_violations: list[dict]
+      clones: list[dict]
+      type_errors: list[dict]
+      semgrep: list[dict]
+      ownership: dict
+      uncovered_changes: dict[path, {changed_lines_missing, changed_lines_coverage_pct}]
+    """
+    hard_additions: list[str] = []
+    soft_additions: list[str] = []
+
+    for memory in memories:
+        findings = memory.get("structured_findings", {}) or {}
+
+        # Security findings: HIGH/MEDIUM → hard, LOW → soft
+        for item in findings.get("security", []):
+            severity = (item.get("severity") or "").upper()
+            test_id = item.get("test_id", "")
+            message = item.get("message", "")
+            line = item.get("line", "?")
+            file_ = item.get("file", "")
+            formatted = f"Security [{test_id}] {message} (line {line}, file {file_})"
+            if severity in ("HIGH", "MEDIUM"):
+                hard_additions.append(formatted)
+            else:
+                soft_additions.append(formatted)
+
+        # Architecture violations → hard
+        for item in findings.get("architecture_violations", []):
+            contract = item.get("contract", "")
+            message = item.get("message", "")
+            hard_additions.append(f"Architecture violation [{contract}]: {message}")
+
+        # Dead code → soft
+        for item in findings.get("dead_code", []):
+            kind = item.get("type", "")
+            name = item.get("name", "")
+            file_ = item.get("file", "")
+            confidence = item.get("confidence", "?")
+            soft_additions.append(
+                f"Dead code: {kind} '{name}' in {file_} (confidence {confidence}%)"
+            )
+
+        # API surface → soft
+        for item in findings.get("api_surface", []):
+            change_type = item.get("change_type", "")
+            symbol = item.get("symbol", "")
+            details = item.get("details", "")
+            soft_additions.append(f"API issue [{change_type}]: {symbol} — {details}")
+
+        # Clones → soft
+        for item in findings.get("clones", []):
+            lines = item.get("lines", "?")
+            file_a = item.get("file_a", "")
+            file_b = item.get("file_b", "")
+            soft_additions.append(
+                f"Code clone: {lines} lines duplicated between {file_a} and {file_b}"
+            )
+
+        # Type errors → soft
+        for item in findings.get("type_errors", []):
+            code = item.get("code", "")
+            line = item.get("line", "?")
+            message = item.get("message", "")
+            soft_additions.append(f"Type error [{code}] line {line}: {message}")
+
+        # Uncovered changes: dict[path → info] → soft
+        for path, info in findings.get("uncovered_changes", {}).items():
+            basename = os.path.basename(path)
+            missing = info.get("changed_lines_missing", "?")
+            soft_additions.append(
+                f"Uncovered changes in {basename}: {missing} changed lines have no tests"
+            )
+
+    return hard_additions, soft_additions
 
 
 class BriefBuilder:
@@ -54,7 +145,8 @@ class BriefBuilder:
             m["content"] for m in memories
             if m.get("type") in ("invariant", "contract")
         ]
-        hard_constraints = memory_constraints + forbidden_edits
+        hard_additions, soft_additions = _extract_brief_signals(memories)
+        hard_constraints = memory_constraints + forbidden_edits + hard_additions
 
         soft_items = [
             m["content"] for m in memories
@@ -62,7 +154,7 @@ class BriefBuilder:
         ] + [
             f"Commit {d['sha'][:8]}: {d['message']}"
             for d in diffs
-        ]
+        ] + soft_additions
 
         compressed = self._compressor.compress(hard_constraints, soft_items, task)
 

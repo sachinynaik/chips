@@ -20,9 +20,9 @@ class MemoryRepository:
             """
             INSERT INTO cortex_memories
                 (type, scope, content, tags, evidence_refs, confidence,
-                 source, author, embedding, tenant_id)
+                 source, author, embedding, tenant_id, structured_findings)
             VALUES
-                (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
+                (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb)
             RETURNING id
             """,
             (
@@ -36,6 +36,7 @@ class MemoryRepository:
                 record.author,
                 record.embedding,
                 record.tenant_id,
+                json.dumps(record.structured_findings),
             ),
         ).fetchone()
         assert row is not None
@@ -46,7 +47,7 @@ class MemoryRepository:
             """
             SELECT id, type, scope, content, tags, evidence_refs,
                    confidence, source, author, created_at, updated_at,
-                   archived_at, tenant_id, embedding
+                   archived_at, tenant_id, embedding, structured_findings
             FROM cortex_memories
             WHERE id = %s AND archived_at IS NULL
             """,
@@ -65,7 +66,7 @@ class MemoryRepository:
             """
             SELECT id, type, scope, content, tags, evidence_refs,
                    confidence, source, author, created_at, updated_at,
-                   archived_at, tenant_id, embedding
+                   archived_at, tenant_id, embedding, structured_findings
             FROM cortex_memories
             WHERE scope = %s AND archived_at IS NULL
             ORDER BY created_at DESC
@@ -85,7 +86,7 @@ class MemoryRepository:
                 """
                 SELECT id, type, scope, content, tags, evidence_refs,
                        confidence, source, author, created_at, updated_at,
-                       archived_at, tenant_id, embedding
+                       archived_at, tenant_id, embedding, structured_findings
                 FROM cortex_memories
                 WHERE embedding IS NOT NULL
                   AND archived_at IS NULL
@@ -100,7 +101,7 @@ class MemoryRepository:
                 """
                 SELECT id, type, scope, content, tags, evidence_refs,
                        confidence, source, author, created_at, updated_at,
-                       archived_at, tenant_id, embedding
+                       archived_at, tenant_id, embedding, structured_findings
                 FROM cortex_memories
                 WHERE embedding IS NOT NULL
                   AND archived_at IS NULL
@@ -116,7 +117,7 @@ class MemoryRepository:
         (
             id_, type_, scope, content, tags, evidence_refs,
             confidence, source, author, created_at, updated_at,
-            archived_at, tenant_id, embedding,
+            archived_at, tenant_id, embedding, structured_findings_,
         ) = row
         return MemoryRecord(
             id=id_,
@@ -133,4 +134,5 @@ class MemoryRepository:
             archived_at=archived_at,
             tenant_id=tenant_id,
             embedding=list(embedding) if embedding is not None else None,
+            structured_findings=structured_findings_ if structured_findings_ else {},
         )
