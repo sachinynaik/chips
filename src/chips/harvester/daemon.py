@@ -21,12 +21,13 @@ class HarvesterDaemon:
         embedder: OllamaEmbedder,
         repo_path: str,
         poll_interval: int = 60,
+        extractor: CommitMemoryExtractor | None = None,
     ) -> None:
         self._conn = conn
         self._embedder = embedder
         self._repo_path = repo_path
         self._poll_interval = poll_interval
-        self._extractor = CommitMemoryExtractor()
+        self._extractor = extractor or CommitMemoryExtractor()
 
     def run_once(self) -> int:
         """Process new commits since last run. Returns count of memories written."""
