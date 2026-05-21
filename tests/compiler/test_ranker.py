@@ -56,3 +56,61 @@ def test_recent_file_scores_higher_than_old():
     old = _file_signal("old.py", 0.5, 180)
     ranked = rank_signals([], [recent, old])
     assert ranked[0].item_id == "new.py"
+
+
+# ── Diff ranking ──────────────────────────────────────────────────────────────
+
+def _diff(sha: str, days_old: int, cochange_pairs: list | None = None) -> dict:
+    committed_at = (datetime.now(timezone.utc) - timedelta(days=days_old)).isoformat()
+    return {
+        "sha": sha,
+        "message": "commit message",
+        "author": "dev",
+        "committed_at": committed_at,
+        "files_changed": ["src/auth/service.py"],
+        "cochange_pairs": cochange_pairs or [],
+    }
+
+
+def test_rank_diff_item_type():
+    ranked = rank_signals([], [], diffs=[_diff("abc123", days_old=1)])
+    diff_items = [r for r in ranked if r.item_type == "diff"]
+    assert len(diff_items) == 1
+    assert diff_items[0].item_id == "abc123"
+
+
+def test_rank_diff_score_between_0_and_1():
+    pairs = [{"file_a": "x.py", "file_b": "y.py", "frequency": 3}]
+    for r in rank_signals([], [], diffs=[_diff("abc", 5, pairs)]):
+        assert 0.0 <= r.score <= 1.0
+
+
+def test_rank_diff_has_recency_in_breakdown():
+    ranked = rank_signals([], [], diffs=[_diff("abc", 3)])
+    diff_signal = next(r for r in ranked if r.item_type == "diff")
+    assert "recency" in diff_signal.signal_breakdown
+
+
+def test_rank_diff_has_cochange_count_in_breakdown():
+    pairs = [{"file_a": "a.py", "file_b": "b.py", "frequency": 5}]
+    ranked = rank_signals([], [], diffs=[_diff("abc", 3, pairs)])
+    diff_signal = next(r for r in ranked if r.item_type == "diff")
+    assert "cochange_count" in diff_signal.signal_breakdown
+    assert diff_signal.signal_breakdown["cochange_count"] == 1
+
+
+def test_recent_diff_scores_higher_than_old_diff():
+    recent = _diff("new_sha", days_old=1)
+    old = _diff("old_sha", days_old=180)
+    ranked = rank_signals([], [], diffs=[recent, old])
+    diff_items = [r for r in ranked if r.item_type == "diff"]
+    assert diff_items[0].item_id == "new_sha"
+
+
+def test_rank_diffs_mixed_with_memories_and_files():
+    memories = [_memory("m1", 0.9)]
+    files = [_file_signal("f.py", 0.3, 5)]
+    diffs = [_diff("d1", 2)]
+    ranked = rank_signals(memories, files, diffs=diffs)
+    types = {r.item_type for r in ranked}
+    assert types == {"memory", "file", "diff"}

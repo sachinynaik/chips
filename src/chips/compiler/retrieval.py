@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import psycopg
 
+from chips.mcp.tools.diffs import get_diffs_for_scope as _get_diffs_for_scope
 from chips.mcp.tools.memory import search_memory as _search_memory
 
 
@@ -37,6 +38,14 @@ def retrieve_file_signals(
         }
         for row in rows
     ]
+
+
+def retrieve_diffs(
+    conn: psycopg.Connection,
+    scope: str | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    return _get_diffs_for_scope(conn, scope=scope, limit=limit)["commits"]
 
 
 def retrieve_cochanges(

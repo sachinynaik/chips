@@ -12,7 +12,7 @@ from chips.compiler.compressor import OllamaCompressor
 from chips.compiler.models import ContextBrief, RetrievedItems
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.ranker import rank_signals
-from chips.compiler.retrieval import retrieve_file_signals, retrieve_memories
+from chips.compiler.retrieval import retrieve_diffs, retrieve_file_signals, retrieve_memories
 from chips.harvester.embedding import OllamaEmbedder
 
 
@@ -37,8 +37,9 @@ class BriefBuilder:
 
         memories = retrieve_memories(self._conn, embedding, scope=scope)
         file_signals = retrieve_file_signals(self._conn, [])
+        diffs = retrieve_diffs(self._conn, scope=scope)
 
-        ranked = rank_signals(memories, file_signals)
+        ranked = rank_signals(memories, file_signals, diffs=diffs)
 
         # Collect policy forbidden/required items
         forbidden_edits: list[str] = []
@@ -58,6 +59,9 @@ class BriefBuilder:
         soft_items = [
             m["content"] for m in memories
             if m.get("type") not in ("invariant", "contract")
+        ] + [
+            f"Commit {d['sha'][:8]}: {d['message']}"
+            for d in diffs
         ]
 
         compressed = self._compressor.compress(hard_constraints, soft_items, task)
@@ -73,7 +77,7 @@ class BriefBuilder:
             generated_at=generated_at,
             latency_ms=latency_ms,
             task_kind=str(task_kind),
-            retrieved=RetrievedItems(memories=memories),
+            retrieved=RetrievedItems(memories=memories, diffs=diffs),
             ranked_signals=ranked,
             hard_constraints=hard_constraints,
             compressed_context=compressed,
@@ -89,8 +93,8 @@ class BriefBuilder:
             """
             INSERT INTO cortex_briefs (
                 brief_id, task, scope, generated_at, latency_ms,
-                retrieved_memories, compressed_context, hard_constraints
-            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
+                retrieved_memories, retrieved_diffs, compressed_context, hard_constraints
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb)
             """,
             (
                 str(brief.brief_id),
@@ -99,6 +103,7 @@ class BriefBuilder:
                 brief.generated_at,
                 brief.latency_ms,
                 json.dumps(brief.retrieved.memories),
+                json.dumps(brief.retrieved.diffs),
                 brief.compressed_context,
                 json.dumps(brief.hard_constraints),
             ),

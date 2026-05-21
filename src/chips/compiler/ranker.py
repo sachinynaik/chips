@@ -19,9 +19,19 @@ def _recency_score(last_changed_at: datetime | None, now: datetime) -> float:
     return math.exp(-age_days / 30.0)
 
 
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def rank_signals(
     memories: list[dict],
     file_signals: list[dict],
+    diffs: list[dict] | None = None,
     now: datetime | None = None,
 ) -> list[RankedSignal]:
     if now is None:
@@ -48,6 +58,19 @@ def rank_signals(
             item_type="file",
             score=score,
             signal_breakdown={"churn": churn, "recency": recency},
+        ))
+
+    for diff in (diffs or []):
+        committed_at = _parse_datetime(diff.get("committed_at"))
+        recency = _recency_score(committed_at, now)
+        cochange_count = len(diff.get("cochange_pairs", []))
+        cochange_norm = min(cochange_count / 10.0, 1.0)
+        score = min(_W_RECENCY * recency + _W_CHURN * cochange_norm, 1.0)
+        ranked.append(RankedSignal(
+            item_id=diff["sha"],
+            item_type="diff",
+            score=score,
+            signal_breakdown={"recency": round(recency, 4), "cochange_count": cochange_count},
         ))
 
     return sorted(ranked, key=lambda s: s.score, reverse=True)

@@ -20,7 +20,7 @@ class RetrievedItems:
     symbols: list[str] = field(default_factory=list)
     traces: list[dict] = field(default_factory=list)
     tests: list[str] = field(default_factory=list)
-    diffs: list[str] = field(default_factory=list)
+    diffs: list[dict] = field(default_factory=list)
 
 
 @dataclass
