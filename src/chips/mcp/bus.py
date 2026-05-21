@@ -95,7 +95,7 @@ def create_bus(
         compressor=compressor,
         policy_loader=policy_loader,
     ))
-    registry.add(DiffsModule())
+    registry.add(DiffsModule(conn_factory=conn_factory))
     registry.add(RuntimeModule())
     registry.add(WorkflowModule())
     registry.add(ContractsModule())

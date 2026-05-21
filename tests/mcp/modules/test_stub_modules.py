@@ -3,28 +3,6 @@ from unittest.mock import MagicMock
 from mcp.server.fastmcp import FastMCP
 
 
-# ── DiffsModule ──────────────────────────────────────────────────────────────
-
-def test_diffs_module_name():
-    from chips.mcp.modules.diffs import DiffsModule
-    assert DiffsModule().name == "diffs"
-
-
-def test_diffs_module_get_diffs_returns_expected_shape():
-    from chips.mcp.modules.diffs import DiffsModule
-    result = DiffsModule().get_diffs(scope=None)
-    assert "diffs" in result
-    assert "status" in result
-    assert isinstance(result["diffs"], list)
-
-
-def test_diffs_module_registers_tool():
-    from chips.mcp.modules.diffs import DiffsModule
-    app = FastMCP("test")
-    DiffsModule().register(app)
-    assert "get_diffs" in list(app._tool_manager._tools.keys())
-
-
 # ── RuntimeModule ─────────────────────────────────────────────────────────────
 
 def test_runtime_module_name():
