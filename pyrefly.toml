@@ -1,0 +1,7 @@
+project-includes = [
+    "src",
+]
+python-version = "3.13.0"
+
+# lizard is an optional enrichment dependency; import is guarded by try/except
+ignore-missing-imports = ["lizard"]
