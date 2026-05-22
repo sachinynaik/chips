@@ -70,7 +70,7 @@ def test_create_bus_returns_fastmcp_named_chips_cortex():
     assert app.name == "chips-cortex"
 
 
-def test_create_bus_registers_all_nine_modules():
+def test_create_bus_registers_all_ten_modules():
     from chips.mcp.bus import create_bus
     _, registry = create_bus(
         conn_factory=MagicMock(),
@@ -79,7 +79,7 @@ def test_create_bus_registers_all_nine_modules():
         policy_loader=MagicMock(),
     )
     expected = {
-        "memory", "git", "brief",
+        "memory", "git", "brief", "briefs",
         "diffs", "runtime", "workflow",
         "contracts", "tests_ctx", "policy",
     }
