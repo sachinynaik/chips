@@ -25,11 +25,12 @@ class MemoryModule:
         query: str,
         scope: str | None = None,
         limit: int = 10,
+        tenant_id: str | None = None,
     ) -> list[dict]:
         embedding = self._embedder.embed(query)
         conn = self._conn_factory()
         try:
-            return _search_memory(conn, embedding, scope=scope, limit=limit)
+            return _search_memory(conn, embedding, scope=scope, limit=limit, tenant_id=tenant_id)
         finally:
             conn.close()
 

@@ -191,3 +191,25 @@ def test_multiple_commits_all_returned():
     shas = [c["sha"] for c in result["commits"]]
     assert "sha_1" in shas
     assert "sha_2" in shas
+
+
+# ---------------------------------------------------------------------------
+# tenant_id filtering
+# ---------------------------------------------------------------------------
+
+_TENANT = "bbbbbbbb-0000-0000-0000-000000000001"
+
+
+def test_tenant_id_included_in_commits_sql_when_given():
+    conn = _conn_returning([])
+    get_diffs_for_scope(conn, tenant_id=_TENANT)
+    sql, params = conn.execute.call_args_list[0][0]
+    assert "tenant_id" in sql
+    assert _TENANT in params
+
+
+def test_tenant_id_omitted_from_commits_sql_when_none():
+    conn = _conn_returning([])
+    get_diffs_for_scope(conn, tenant_id=None)
+    sql, _ = conn.execute.call_args_list[0][0]
+    assert "tenant_id" not in sql

@@ -42,16 +42,21 @@ class MemoryRepository:
         assert row is not None
         return row[0]
 
-    def get(self, memory_id: UUID) -> MemoryRecord | None:
+    def get(self, memory_id: UUID, tenant_id: str | None = None) -> MemoryRecord | None:
+        conditions = ["id = %s", "archived_at IS NULL"]
+        params: list = [memory_id]
+        if tenant_id is not None:
+            conditions.append("tenant_id = %s")
+            params.append(tenant_id)
         row = self._conn.execute(
-            """
+            f"""
             SELECT id, type, scope, content, tags, evidence_refs,
                    confidence, source, author, created_at, updated_at,
                    archived_at, tenant_id, embedding, structured_findings
             FROM cortex_memories
-            WHERE id = %s AND archived_at IS NULL
-            """,
-            (memory_id,),
+            WHERE {' AND '.join(conditions)}
+            """,  # type: ignore[arg-type]
+            tuple(params),
         ).fetchone()
         return self._row_to_record(row) if row else None
 
@@ -61,17 +66,22 @@ class MemoryRepository:
             (memory_id,),
         )
 
-    def list_by_scope(self, scope: str) -> list[MemoryRecord]:
+    def list_by_scope(self, scope: str, tenant_id: str | None = None) -> list[MemoryRecord]:
+        conditions = ["scope = %s", "archived_at IS NULL"]
+        params: list = [scope]
+        if tenant_id is not None:
+            conditions.append("tenant_id = %s")
+            params.append(tenant_id)
         rows = self._conn.execute(
-            """
+            f"""
             SELECT id, type, scope, content, tags, evidence_refs,
                    confidence, source, author, created_at, updated_at,
                    archived_at, tenant_id, embedding, structured_findings
             FROM cortex_memories
-            WHERE scope = %s AND archived_at IS NULL
+            WHERE {' AND '.join(conditions)}
             ORDER BY created_at DESC
-            """,
-            (scope,),
+            """,  # type: ignore[arg-type]
+            tuple(params),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
@@ -80,36 +90,30 @@ class MemoryRepository:
         query_embedding: list[float],
         limit: int = 10,
         scope: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[MemoryRecord]:
+        conditions = ["embedding IS NOT NULL", "archived_at IS NULL"]
+        params: list = []
         if scope:
-            rows = self._conn.execute(
-                """
-                SELECT id, type, scope, content, tags, evidence_refs,
-                       confidence, source, author, created_at, updated_at,
-                       archived_at, tenant_id, embedding, structured_findings
-                FROM cortex_memories
-                WHERE embedding IS NOT NULL
-                  AND archived_at IS NULL
-                  AND scope = %s
-                ORDER BY embedding <=> %s::vector
-                LIMIT %s
-                """,
-                (scope, query_embedding, limit),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                """
-                SELECT id, type, scope, content, tags, evidence_refs,
-                       confidence, source, author, created_at, updated_at,
-                       archived_at, tenant_id, embedding, structured_findings
-                FROM cortex_memories
-                WHERE embedding IS NOT NULL
-                  AND archived_at IS NULL
-                ORDER BY embedding <=> %s::vector
-                LIMIT %s
-                """,
-                (query_embedding, limit),
-            ).fetchall()
+            conditions.append("scope = %s")
+            params.append(scope)
+        if tenant_id is not None:
+            conditions.append("tenant_id = %s")
+            params.append(tenant_id)
+        params.extend([query_embedding, limit])
+
+        rows = self._conn.execute(
+            f"""
+            SELECT id, type, scope, content, tags, evidence_refs,
+                   confidence, source, author, created_at, updated_at,
+                   archived_at, tenant_id, embedding, structured_findings
+            FROM cortex_memories
+            WHERE {' AND '.join(conditions)}
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s
+            """,  # type: ignore[arg-type]
+            tuple(params),
+        ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
     @staticmethod

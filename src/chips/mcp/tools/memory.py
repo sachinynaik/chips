@@ -9,12 +9,14 @@ def search_memory(
     query_embedding: list[float],
     scope: str | None = None,
     limit: int = 10,
+    tenant_id: str | None = None,
 ) -> list[dict]:
     repo = MemoryRepository(conn)  # register_vector happens inside __init__
     records = repo.semantic_search(
         query_embedding=query_embedding,
         scope=scope,
         limit=limit,
+        tenant_id=tenant_id,
     )
     return [
         {

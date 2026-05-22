@@ -237,3 +237,61 @@ def test_row_to_record_preserves_all_fields():
     assert record.confidence == pytest.approx(0.95)
     assert record.source == "manual"
     assert record.structured_findings == findings
+
+
+# ---------------------------------------------------------------------------
+# tenant_id filtering in repository queries
+# ---------------------------------------------------------------------------
+
+_TENANT = "bbbbbbbb-0000-0000-0000-000000000001"
+
+
+def test_semantic_search_includes_tenant_filter_when_given():
+    repo, conn = _make_repo()
+    conn.execute.return_value.fetchall.return_value = []
+    repo.semantic_search(query_embedding=[0.1] * 4, limit=5, tenant_id=_TENANT)
+    sql, params = conn.execute.call_args[0]
+    assert "tenant_id = %s" in sql
+    assert _TENANT in params
+
+
+def test_semantic_search_omits_tenant_filter_when_none():
+    repo, conn = _make_repo()
+    conn.execute.return_value.fetchall.return_value = []
+    repo.semantic_search(query_embedding=[0.1] * 4, limit=5, tenant_id=None)
+    sql, _ = conn.execute.call_args[0]
+    assert "tenant_id = %s" not in sql
+
+
+def test_list_by_scope_includes_tenant_filter_when_given():
+    repo, conn = _make_repo()
+    conn.execute.return_value.fetchall.return_value = []
+    repo.list_by_scope("auth", tenant_id=_TENANT)
+    sql, params = conn.execute.call_args[0]
+    assert "tenant_id = %s" in sql
+    assert _TENANT in params
+
+
+def test_list_by_scope_omits_tenant_filter_when_none():
+    repo, conn = _make_repo()
+    conn.execute.return_value.fetchall.return_value = []
+    repo.list_by_scope("auth", tenant_id=None)
+    sql, _ = conn.execute.call_args[0]
+    assert "tenant_id = %s" not in sql
+
+
+def test_get_includes_tenant_filter_when_given():
+    repo, conn = _make_repo()
+    conn.execute.return_value.fetchone.return_value = None
+    repo.get(uuid.uuid4(), tenant_id=_TENANT)
+    sql, params = conn.execute.call_args[0]
+    assert "tenant_id = %s" in sql
+    assert _TENANT in params
+
+
+def test_get_omits_tenant_filter_when_none():
+    repo, conn = _make_repo()
+    conn.execute.return_value.fetchone.return_value = None
+    repo.get(uuid.uuid4(), tenant_id=None)
+    sql, _ = conn.execute.call_args[0]
+    assert "tenant_id = %s" not in sql

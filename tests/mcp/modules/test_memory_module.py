@@ -55,3 +55,16 @@ def test_memory_module_register_adds_tool_to_app():
     module.register(app)
     tool_names = list(app._tool_manager._tools.keys())
     assert "search_memory" in tool_names
+
+
+def test_search_memory_passes_tenant_id():
+    from chips.mcp.modules.memory import MemoryModule
+    _TENANT = "bbbbbbbb-0000-0000-0000-000000000001"
+    embedder = MagicMock()
+    embedder.embed.return_value = [0.1] * 768
+    with patch("chips.mcp.modules.memory._search_memory", return_value=[]) as fn:
+        MemoryModule(conn_factory=MagicMock(), embedder=embedder).search_memory(
+            query="q", tenant_id=_TENANT
+        )
+    _, kwargs = fn.call_args
+    assert kwargs["tenant_id"] == _TENANT

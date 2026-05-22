@@ -14,11 +14,16 @@ class DiffsModule:
     def __init__(self, conn_factory: Callable[[], psycopg.Connection]) -> None:
         self._conn_factory = conn_factory
 
-    def get_diffs(self, scope: str | None = None, limit: int = 10) -> dict:
-        """Return recent commits and co-change pairs filtered by scope."""
+    def get_diffs(
+        self,
+        scope: str | None = None,
+        limit: int = 10,
+        tenant_id: str | None = None,
+    ) -> dict:
+        """Return recent commits and co-change pairs filtered by scope and tenant."""
         conn = self._conn_factory()
         try:
-            return _get_diffs_for_scope(conn, scope=scope, limit=limit)
+            return _get_diffs_for_scope(conn, scope=scope, limit=limit, tenant_id=tenant_id)
         finally:
             conn.close()
 

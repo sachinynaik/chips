@@ -18,10 +18,11 @@ class ContractsModule:
         self,
         scope: str | None = None,
         limit: int = 20,
+        tenant_id: str | None = None,
     ) -> dict:
         conn = self._conn_factory()
         try:
-            return _get_contracts(conn, scope=scope, limit=limit)
+            return _get_contracts(conn, scope=scope, limit=limit, tenant_id=tenant_id)
         finally:
             conn.close()
 

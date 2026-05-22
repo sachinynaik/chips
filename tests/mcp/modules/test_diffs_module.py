@@ -61,3 +61,12 @@ def test_diffs_module_register_adds_tool_to_app():
     app = FastMCP("test")
     DiffsModule(conn_factory=MagicMock()).register(app)
     assert "get_diffs" in list(app._tool_manager._tools.keys())
+
+
+def test_get_diffs_passes_tenant_id():
+    from chips.mcp.modules.diffs import DiffsModule
+    _TENANT = "bbbbbbbb-0000-0000-0000-000000000001"
+    with patch("chips.mcp.modules.diffs._get_diffs_for_scope", return_value=_fake_result()) as fn:
+        DiffsModule(conn_factory=MagicMock()).get_diffs(tenant_id=_TENANT)
+    _, kwargs = fn.call_args
+    assert kwargs["tenant_id"] == _TENANT

@@ -7,58 +7,51 @@ def get_test_context(
     conn: psycopg.Connection,
     scope: str | None = None,
     limit: int = 20,
+    tenant_id: str | None = None,
 ) -> dict:
-    """Return test file signals and co-change pairs, optionally filtered by scope."""
+    """Return test file signals and co-change pairs, optionally filtered by scope and tenant."""
     scope_pattern = f"%{scope}%" if scope else None
 
-    # Query 1: test files sorted by churn (hottest first)
+    file_conditions = ["file_path ILIKE '%test%'"]
+    file_params: list = []
     if scope_pattern:
-        file_rows = conn.execute(
-            """
-            SELECT file_path, churn_score, failure_count
-            FROM cortex_file_signals
-            WHERE file_path ILIKE '%test%' AND file_path ILIKE %s
-            ORDER BY churn_score DESC
-            LIMIT %s
-            """,
-            (scope_pattern, limit),
-        ).fetchall()
-    else:
-        file_rows = conn.execute(
-            """
-            SELECT file_path, churn_score, failure_count
-            FROM cortex_file_signals
-            WHERE file_path ILIKE '%test%'
-            ORDER BY churn_score DESC
-            LIMIT %s
-            """,
-            (limit,),
-        ).fetchall()
+        file_conditions.append("file_path ILIKE %s")
+        file_params.append(scope_pattern)
+    if tenant_id is not None:
+        file_conditions.append("tenant_id = %s")
+        file_params.append(tenant_id)
+    file_params.append(limit)
 
-    # Query 2: co-change pairs involving test files
+    file_rows = conn.execute(
+        f"""
+        SELECT file_path, churn_score, failure_count
+        FROM cortex_file_signals
+        WHERE {' AND '.join(file_conditions)}
+        ORDER BY churn_score DESC
+        LIMIT %s
+        """,  # type: ignore[arg-type]
+        tuple(file_params),
+    ).fetchall()
+
+    cochange_conditions = ["(file_a ILIKE '%test%' OR file_b ILIKE '%test%')"]
+    cochange_params: list = []
     if scope_pattern:
-        cochange_rows = conn.execute(
-            """
-            SELECT file_a, file_b, frequency
-            FROM cortex_cochange_pairs
-            WHERE (file_a ILIKE '%test%' OR file_b ILIKE '%test%')
-              AND (file_a ILIKE %s OR file_b ILIKE %s)
-            ORDER BY frequency DESC
-            LIMIT 10
-            """,
-            (scope_pattern, scope_pattern),
-        ).fetchall()
-    else:
-        cochange_rows = conn.execute(
-            """
-            SELECT file_a, file_b, frequency
-            FROM cortex_cochange_pairs
-            WHERE file_a ILIKE '%test%' OR file_b ILIKE '%test%'
-            ORDER BY frequency DESC
-            LIMIT 10
-            """,
-            (),
-        ).fetchall()
+        cochange_conditions.append("(file_a ILIKE %s OR file_b ILIKE %s)")
+        cochange_params.extend([scope_pattern, scope_pattern])
+    if tenant_id is not None:
+        cochange_conditions.append("tenant_id = %s")
+        cochange_params.append(tenant_id)
+
+    cochange_rows = conn.execute(
+        f"""
+        SELECT file_a, file_b, frequency
+        FROM cortex_cochange_pairs
+        WHERE {' AND '.join(cochange_conditions)}
+        ORDER BY frequency DESC
+        LIMIT 10
+        """,  # type: ignore[arg-type]
+        tuple(cochange_params),
+    ).fetchall()
 
     return {
         "test_files": [

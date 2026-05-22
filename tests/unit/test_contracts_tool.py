@@ -116,3 +116,34 @@ def test_default_limit_is_20():
     get_contracts(conn)
     _, params = conn.execute.call_args[0]
     assert 20 in params
+
+
+# ---------------------------------------------------------------------------
+# tenant_id filtering
+# ---------------------------------------------------------------------------
+
+_TENANT = "bbbbbbbb-0000-0000-0000-000000000001"
+
+
+def test_tenant_id_included_in_sql_when_given():
+    conn = _conn([])
+    get_contracts(conn, tenant_id=_TENANT)
+    sql, params = conn.execute.call_args[0]
+    assert "tenant_id" in sql
+    assert _TENANT in params
+
+
+def test_tenant_id_omitted_from_sql_when_none():
+    conn = _conn([])
+    get_contracts(conn, tenant_id=None)
+    sql, _ = conn.execute.call_args[0]
+    assert "tenant_id" not in sql
+
+
+def test_tenant_id_combined_with_scope():
+    conn = _conn([])
+    get_contracts(conn, scope="payments", tenant_id=_TENANT)
+    sql, params = conn.execute.call_args[0]
+    assert "tenant_id" in sql
+    assert "payments" in params
+    assert _TENANT in params

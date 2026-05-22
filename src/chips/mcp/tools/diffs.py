@@ -7,44 +7,53 @@ def get_diffs_for_scope(
     conn: psycopg.Connection,
     scope: str | None = None,
     limit: int = 10,
+    tenant_id: str | None = None,
 ) -> dict:
+    commit_conditions = []
+    commit_params: list = []
+
     if scope:
-        rows = conn.execute(
-            """
-            SELECT sha, author, committed_at, message, files_changed
-            FROM cortex_git_commits
-            WHERE EXISTS (
-                SELECT 1 FROM unnest(files_changed) AS f
-                WHERE f ILIKE %s
-            )
-            ORDER BY committed_at DESC
-            LIMIT %s
-            """,
-            (f"%{scope}%", limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT sha, author, committed_at, message, files_changed
-            FROM cortex_git_commits
-            ORDER BY committed_at DESC
-            LIMIT %s
-            """,
-            (limit,),
-        ).fetchall()
+        commit_conditions.append(
+            "EXISTS (SELECT 1 FROM unnest(files_changed) AS f WHERE f ILIKE %s)"
+        )
+        commit_params.append(f"%{scope}%")
+    if tenant_id is not None:
+        commit_conditions.append("tenant_id = %s")
+        commit_params.append(tenant_id)
+
+    where_clause = f"WHERE {' AND '.join(commit_conditions)}" if commit_conditions else ""
+    commit_params.append(limit)
+
+    rows = conn.execute(
+        f"""
+        SELECT sha, author, committed_at, message, files_changed
+        FROM cortex_git_commits
+        {where_clause}
+        ORDER BY committed_at DESC
+        LIMIT %s
+        """,  # type: ignore[arg-type]
+        tuple(commit_params),
+    ).fetchall()
 
     commits = []
     for sha, author, committed_at, message, files_changed in rows:
         files = list(files_changed) if files_changed else []
+
+        cochange_conditions = ["(file_a = ANY(%s) OR file_b = ANY(%s))"]
+        cochange_params: list = [files, files]
+        if tenant_id is not None:
+            cochange_conditions.append("tenant_id = %s")
+            cochange_params.append(tenant_id)
+
         pairs = conn.execute(
-            """
+            f"""
             SELECT file_a, file_b, frequency
             FROM cortex_cochange_pairs
-            WHERE file_a = ANY(%s) OR file_b = ANY(%s)
+            WHERE {' AND '.join(cochange_conditions)}
             ORDER BY frequency DESC
             LIMIT 10
             """,
-            (files, files),
+            tuple(cochange_params),
         ).fetchall()
 
         commits.append({

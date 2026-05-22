@@ -83,3 +83,11 @@ def test_contracts_module_registers_tool():
     app = FastMCP("test")
     _make_module().register(app)
     assert "get_contracts" in app._tool_manager._tools
+
+
+def test_get_contracts_passes_tenant_id():
+    _TENANT = "bbbbbbbb-0000-0000-0000-000000000001"
+    with patch("chips.mcp.modules.contracts._get_contracts", return_value=_fake_result()) as fn:
+        _make_module().get_contracts(tenant_id=_TENANT)
+    _, kwargs = fn.call_args
+    assert kwargs["tenant_id"] == _TENANT

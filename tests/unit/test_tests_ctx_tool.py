@@ -134,3 +134,34 @@ def test_limit_passed_to_file_query():
     get_test_context(conn, limit=5)
     first_call_params = conn.execute.call_args_list[0][0][1]
     assert 5 in first_call_params
+
+
+# ---------------------------------------------------------------------------
+# tenant_id filtering
+# ---------------------------------------------------------------------------
+
+_TENANT = "bbbbbbbb-0000-0000-0000-000000000001"
+
+
+def test_tenant_id_included_in_file_sql_when_given():
+    conn = _conn()
+    get_test_context(conn, tenant_id=_TENANT)
+    sql, params = conn.execute.call_args_list[0][0]
+    assert "tenant_id" in sql
+    assert _TENANT in params
+
+
+def test_tenant_id_included_in_cochange_sql_when_given():
+    conn = _conn()
+    get_test_context(conn, tenant_id=_TENANT)
+    sql, params = conn.execute.call_args_list[1][0]
+    assert "tenant_id" in sql
+    assert _TENANT in params
+
+
+def test_tenant_id_omitted_from_both_queries_when_none():
+    conn = _conn()
+    get_test_context(conn, tenant_id=None)
+    for call in conn.execute.call_args_list:
+        sql, _ = call[0]
+        assert "tenant_id" not in sql
