@@ -99,8 +99,8 @@ def create_bus(
     registry.add(DiffsModule(conn_factory=conn_factory))
     registry.add(RuntimeModule())
     registry.add(WorkflowModule())
-    registry.add(ContractsModule())
-    registry.add(TestsModule())
+    registry.add(ContractsModule(conn_factory=conn_factory))
+    registry.add(TestsModule(conn_factory=conn_factory))
     registry.add(PolicyModule(policy_loader=policy_loader))
     registry.add(BriefsModule(conn_factory=conn_factory))
 

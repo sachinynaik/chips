@@ -1,5 +1,5 @@
-"""RED: Stub Cortex Bus module tests — diffs, runtime, workflow, contracts, tests_ctx, policy."""
-from unittest.mock import MagicMock
+"""Cortex Bus module smoke tests — shape and registration for all modules."""
+from unittest.mock import MagicMock, patch
 from mcp.server.fastmcp import FastMCP
 
 
@@ -51,12 +51,14 @@ def test_workflow_module_registers_tool():
 
 def test_contracts_module_name():
     from chips.mcp.modules.contracts import ContractsModule
-    assert ContractsModule().name == "contracts"
+    assert ContractsModule(conn_factory=MagicMock()).name == "contracts"
 
 
 def test_contracts_module_returns_expected_shape():
     from chips.mcp.modules.contracts import ContractsModule
-    result = ContractsModule().get_contracts(scope=None)
+    fake = {"contracts": [], "scope": None, "status": "ok"}
+    with patch("chips.mcp.modules.contracts._get_contracts", return_value=fake):
+        result = ContractsModule(conn_factory=MagicMock()).get_contracts(scope=None)
     assert "contracts" in result
     assert "status" in result
     assert isinstance(result["contracts"], list)
@@ -65,7 +67,7 @@ def test_contracts_module_returns_expected_shape():
 def test_contracts_module_registers_tool():
     from chips.mcp.modules.contracts import ContractsModule
     app = FastMCP("test")
-    ContractsModule().register(app)
+    ContractsModule(conn_factory=MagicMock()).register(app)
     assert "get_contracts" in list(app._tool_manager._tools.keys())
 
 
@@ -73,21 +75,23 @@ def test_contracts_module_registers_tool():
 
 def test_tests_module_name():
     from chips.mcp.modules.tests_ctx import TestsModule
-    assert TestsModule().name == "tests_ctx"
+    assert TestsModule(conn_factory=MagicMock()).name == "tests_ctx"
 
 
 def test_tests_module_returns_expected_shape():
     from chips.mcp.modules.tests_ctx import TestsModule
-    result = TestsModule().get_test_context(scope=None)
-    assert "tests" in result
+    fake = {"test_files": [], "cochange_pairs": [], "scope": None, "status": "ok"}
+    with patch("chips.mcp.modules.tests_ctx._get_test_context", return_value=fake):
+        result = TestsModule(conn_factory=MagicMock()).get_test_context(scope=None)
+    assert "test_files" in result
     assert "status" in result
-    assert isinstance(result["tests"], list)
+    assert isinstance(result["test_files"], list)
 
 
 def test_tests_module_registers_tool():
     from chips.mcp.modules.tests_ctx import TestsModule
     app = FastMCP("test")
-    TestsModule().register(app)
+    TestsModule(conn_factory=MagicMock()).register(app)
     assert "get_test_context" in list(app._tool_manager._tools.keys())
 
 
