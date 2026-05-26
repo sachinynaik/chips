@@ -11,7 +11,7 @@ import psycopg
 
 from chips.compiler.classifier import classify_task
 from chips.compiler.compressor import OllamaCompressor
-from chips.compiler.models import ContextBrief, RetrievedItems
+from chips.compiler.models import ContextBrief, RetrievedItems, SourceStatus
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.ranker import rank_signals
 from chips.compiler.retrieval import retrieve_diffs, retrieve_file_signals, retrieve_memories
@@ -141,9 +141,20 @@ class BriefBuilder:
         embedding = self._embedder.embed(task)
 
         memories = retrieve_memories(self._conn, embedding, scope=scope, tenant_id=tenant_id)
+
+        effective_files = files if files else []
         file_signals = retrieve_file_signals(
-            self._conn, files or [], tenant_id=tenant_id
+            self._conn, effective_files, tenant_id=tenant_id
         )
+        if not effective_files:
+            file_signals_status = SourceStatus(
+                status="not_configured", detail="no files provided to build()"
+            )
+        elif file_signals:
+            file_signals_status = SourceStatus(status="available")
+        else:
+            file_signals_status = SourceStatus(status="unavailable")
+
         diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
 
         ranked = rank_signals(memories, file_signals, diffs=diffs)
@@ -190,6 +201,7 @@ class BriefBuilder:
             hard_constraints=hard_constraints,
             compressed_context=compressed,
             tenant_id=tenant_id,
+            data_sources={"file_signals": file_signals_status},
             forbidden_edits=forbidden_edits,
             allowed_edits=allowed_edits,
         )
