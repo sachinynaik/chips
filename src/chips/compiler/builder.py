@@ -185,13 +185,23 @@ class BriefBuilder:
         hard_additions, soft_additions = _extract_brief_signals(memories)
         hard_constraints = memory_constraints + forbidden_edits + hard_additions
 
-        soft_items = [
-            m["content"] for m in memories
-            if m.get("type") not in ("invariant", "contract")
-        ] + [
-            f"Commit {d['sha'][:8]}: {d['message']}"
-            for d in diffs
-        ] + soft_additions
+        # Build scored soft items then sort by relevance before compression.
+        score_by_id: dict[str, float] = {s.item_id: s.score for s in ranked}
+        scored_soft: list[tuple[float, str]] = []
+        for m in memories:
+            if m.get("type") not in ("invariant", "contract"):
+                scored_soft.append(
+                    (score_by_id.get(str(m.get("id", "")), 0.0), m["content"])
+                )
+        for d in diffs:
+            sha = str(d.get("sha", ""))
+            scored_soft.append(
+                (score_by_id.get(sha, 0.0), f"Commit {sha[:8]}: {d['message']}")
+            )
+        for item in soft_additions:
+            scored_soft.append((0.0, item))
+        scored_soft.sort(key=lambda x: x[0], reverse=True)
+        soft_items = [text for _, text in scored_soft]
 
         compressed = self._compressor.compress(hard_constraints, soft_items, task)
 
