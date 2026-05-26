@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 
@@ -24,6 +25,12 @@ class RetrievedItems:
 
 
 @dataclass
+class SourceStatus:
+    status: Literal["not_configured", "available", "unavailable", "error"]
+    detail: str = ""
+
+
+@dataclass
 class ContextBrief:
     brief_id: UUID
     task: str
@@ -35,5 +42,9 @@ class ContextBrief:
     ranked_signals: list[RankedSignal]
     hard_constraints: list[str]
     compressed_context: str
+    # tenant_id=None: single-tenant/dev mode only. Production callers must pass a value.
+    tenant_id: str | None = None
+    data_sources: dict[str, SourceStatus] = field(default_factory=dict)
+    schema_version: int = 1
     forbidden_edits: list[str] = field(default_factory=list)
     allowed_edits: list[str] = field(default_factory=list)

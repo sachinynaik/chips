@@ -58,4 +58,6 @@ def test_get_context_brief_passes_scope_to_builder():
         from chips.mcp.server import get_context_brief
         get_context_brief(task="add feature", scope="payments")
 
-    mock_cls.return_value.build.assert_called_once_with("add feature", scope="payments")
+    mock_cls.return_value.build.assert_called_once_with(
+        "add feature", scope="payments", tenant_id=None
+    )

@@ -26,7 +26,12 @@ class BriefModule:
         self._compressor = compressor
         self._policy_loader = policy_loader
 
-    def get_context_brief(self, task: str, scope: str | None = None) -> dict:
+    def get_context_brief(
+        self,
+        task: str,
+        scope: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict:
         conn = self._conn_factory()
         try:
             builder = BriefBuilder(
@@ -35,7 +40,7 @@ class BriefModule:
                 self._compressor,
                 policy_loader=self._policy_loader,
             )
-            brief = builder.build(task, scope=scope)
+            brief = builder.build(task, scope=scope, tenant_id=tenant_id)
         finally:
             conn.close()
 
@@ -44,10 +49,12 @@ class BriefModule:
             "task": brief.task,
             "task_kind": brief.task_kind,
             "scope": brief.scope,
+            "tenant_id": brief.tenant_id,
             "generated_at": brief.generated_at.isoformat(),
             "latency_ms": brief.latency_ms,
             "hard_constraints": brief.hard_constraints,
             "compressed_context": brief.compressed_context,
+            "schema_version": brief.schema_version,
             "ranked_signals": [
                 {
                     "item_id": s.item_id,

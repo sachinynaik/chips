@@ -125,3 +125,66 @@ def test_build_persists_retrieved_diffs(conn):
     stored = row[0]
     assert isinstance(stored, list)
     assert stored[0]["sha"] == "sha_persisted"
+
+
+# ── Gap 5: tenant_id threading ────────────────────────────────────────────────
+
+_TENANT = "aaaaaaaa-0000-0000-0000-000000000001"
+
+
+def test_build_stores_tenant_id_in_brief(conn):
+    builder = BriefBuilder(conn, _make_embedder(), _make_compressor())
+    brief = builder.build("fix crash", tenant_id=_TENANT)
+    assert brief.tenant_id == _TENANT
+
+
+def test_build_threads_tenant_id_to_retrieve_memories(conn):
+    with patch("chips.compiler.builder.retrieve_memories", return_value=[]) as mock_mem:
+        BriefBuilder(conn, _make_embedder(), _make_compressor()).build(
+            "fix auth", tenant_id=_TENANT
+        )
+    _, kwargs = mock_mem.call_args
+    assert kwargs.get("tenant_id") == _TENANT
+
+
+def test_build_threads_tenant_id_to_retrieve_diffs(conn):
+    with patch("chips.compiler.builder.retrieve_diffs", return_value=[]) as mock_diffs:
+        BriefBuilder(conn, _make_embedder(), _make_compressor()).build(
+            "fix auth", tenant_id=_TENANT
+        )
+    _, kwargs = mock_diffs.call_args
+    assert kwargs.get("tenant_id") == _TENANT
+
+
+def test_build_threads_tenant_id_to_retrieve_file_signals(conn):
+    with patch("chips.compiler.builder.retrieve_file_signals", return_value=[]) as mock_fs:
+        BriefBuilder(conn, _make_embedder(), _make_compressor()).build(
+            "fix auth", files=["src/auth.py"], tenant_id=_TENANT
+        )
+    _, kwargs = mock_fs.call_args
+    assert kwargs.get("tenant_id") == _TENANT
+
+
+def test_build_persists_tenant_id_to_db(conn):
+    builder = BriefBuilder(conn, _make_embedder(), _make_compressor())
+    brief = builder.build("fix crash", tenant_id=_TENANT)
+    row = conn.execute(
+        "SELECT tenant_id FROM cortex_briefs WHERE brief_id = %s",
+        (str(brief.brief_id),),
+    ).fetchone()
+    assert row is not None
+    assert str(row[0]) == _TENANT
+
+
+def test_build_tenant_id_none_by_default(conn):
+    builder = BriefBuilder(conn, _make_embedder(), _make_compressor())
+    brief = builder.build("fix crash")
+    assert brief.tenant_id is None
+
+
+def test_build_warns_when_require_tenant_set_and_none_passed(conn, monkeypatch):
+    import logging
+    monkeypatch.setenv("CHIPS_REQUIRE_TENANT_ID", "1")
+    with patch("chips.compiler.builder.logger") as mock_logger:
+        BriefBuilder(conn, _make_embedder(), _make_compressor()).build("fix crash")
+    mock_logger.warning.assert_called_once()

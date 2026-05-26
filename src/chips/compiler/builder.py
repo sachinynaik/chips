@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -13,9 +15,9 @@ from chips.compiler.models import ContextBrief, RetrievedItems
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.ranker import rank_signals
 from chips.compiler.retrieval import retrieve_diffs, retrieve_file_signals, retrieve_memories
-import os
-
 from chips.harvester.embedding import OllamaEmbedder
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_brief_signals(
@@ -120,15 +122,29 @@ class BriefBuilder:
         self._compressor = compressor
         self._policy_loader = policy_loader
 
-    def build(self, task: str, scope: str | None = None) -> ContextBrief:
+    def build(
+        self,
+        task: str,
+        scope: str | None = None,
+        files: list[str] | None = None,
+        tenant_id: str | None = None,
+    ) -> ContextBrief:
+        if tenant_id is None and os.getenv("CHIPS_REQUIRE_TENANT_ID"):
+            logger.warning(
+                "BriefBuilder.build() called without tenant_id; "
+                "set CHIPS_REQUIRE_TENANT_ID only in production deployments"
+            )
+
         start = time.monotonic()
 
         task_kind = classify_task(task)
         embedding = self._embedder.embed(task)
 
-        memories = retrieve_memories(self._conn, embedding, scope=scope)
-        file_signals = retrieve_file_signals(self._conn, [])
-        diffs = retrieve_diffs(self._conn, scope=scope)
+        memories = retrieve_memories(self._conn, embedding, scope=scope, tenant_id=tenant_id)
+        file_signals = retrieve_file_signals(
+            self._conn, files or [], tenant_id=tenant_id
+        )
+        diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
 
         ranked = rank_signals(memories, file_signals, diffs=diffs)
 
@@ -173,6 +189,7 @@ class BriefBuilder:
             ranked_signals=ranked,
             hard_constraints=hard_constraints,
             compressed_context=compressed,
+            tenant_id=tenant_id,
             forbidden_edits=forbidden_edits,
             allowed_edits=allowed_edits,
         )
@@ -185,8 +202,9 @@ class BriefBuilder:
             """
             INSERT INTO cortex_briefs (
                 brief_id, task, scope, generated_at, latency_ms,
-                retrieved_memories, retrieved_diffs, compressed_context, hard_constraints
-            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb)
+                retrieved_memories, retrieved_diffs, compressed_context, hard_constraints,
+                tenant_id
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s)
             """,
             (
                 str(brief.brief_id),
@@ -198,6 +216,7 @@ class BriefBuilder:
                 json.dumps(brief.retrieved.diffs),
                 brief.compressed_context,
                 json.dumps(brief.hard_constraints),
+                brief.tenant_id,
             ),
         )
         self._conn.commit()

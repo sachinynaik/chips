@@ -71,7 +71,37 @@ def test_get_context_brief_passes_task_and_scope_to_builder():
         module = _make_module()
         module.get_context_brief(task="add feature X", scope="payments")
 
-    mock_builder.build.assert_called_once_with("add feature X", scope="payments")
+    mock_builder.build.assert_called_once_with(
+        "add feature X", scope="payments", tenant_id=None
+    )
+
+
+# ── Gap 5: tenant_id threading ────────────────────────────────────────────────
+
+_TENANT = "aaaaaaaa-0000-0000-0000-000000000001"
+
+
+def test_get_context_brief_threads_tenant_id_to_builder():
+    import uuid
+    from datetime import datetime, timezone
+
+    fake_brief = MagicMock()
+    fake_brief.brief_id = uuid.uuid4()
+    fake_brief.generated_at = datetime.now(timezone.utc)
+    fake_brief.ranked_signals = []
+    fake_brief.retrieved.memories = []
+
+    with patch("chips.mcp.modules.brief.BriefBuilder") as mock_builder_cls:
+        mock_builder = MagicMock()
+        mock_builder.build.return_value = fake_brief
+        mock_builder_cls.return_value = mock_builder
+
+        module = _make_module()
+        module.get_context_brief(task="fix crash", scope="auth", tenant_id=_TENANT)
+
+    mock_builder.build.assert_called_once_with(
+        "fix crash", scope="auth", tenant_id=_TENANT
+    )
 
 
 def test_brief_module_register_adds_tool_to_app():
