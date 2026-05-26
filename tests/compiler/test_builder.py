@@ -182,9 +182,8 @@ def test_build_tenant_id_none_by_default(conn):
     assert brief.tenant_id is None
 
 
-def test_build_warns_when_require_tenant_set_and_none_passed(conn, monkeypatch):
-    import logging
+def test_build_raises_when_require_tenant_set_and_none_passed(conn, monkeypatch):
+    import pytest
     monkeypatch.setenv("CHIPS_REQUIRE_TENANT_ID", "1")
-    with patch("chips.compiler.builder.logger") as mock_logger:
+    with pytest.raises(ValueError, match="CHIPS_REQUIRE_TENANT_ID"):
         BriefBuilder(conn, _make_embedder(), _make_compressor()).build("fix crash")
-    mock_logger.warning.assert_called_once()

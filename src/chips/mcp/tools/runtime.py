@@ -13,7 +13,8 @@ def probe_runtime() -> SourceStatus:
     if not base_url:
         return SourceStatus(status="not_configured")
     try:
-        requests.get(f"{base_url.rstrip('/')}/api/v1/services", timeout=1)
+        resp = requests.get(f"{base_url.rstrip('/')}/api/v1/services", timeout=1)
+        resp.raise_for_status()
         return SourceStatus(status="available")
     except Exception as exc:
         return SourceStatus(status="error", detail=str(exc))

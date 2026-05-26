@@ -132,9 +132,9 @@ class BriefBuilder:
         tenant_id: str | None = None,
     ) -> ContextBrief:
         if tenant_id is None and os.getenv("CHIPS_REQUIRE_TENANT_ID"):
-            logger.warning(
-                "BriefBuilder.build() called without tenant_id; "
-                "set CHIPS_REQUIRE_TENANT_ID only in production deployments"
+            raise ValueError(
+                "BriefBuilder.build() called without tenant_id but "
+                "CHIPS_REQUIRE_TENANT_ID is set — all production builds require a tenant"
             )
 
         start = time.monotonic()

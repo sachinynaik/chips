@@ -42,7 +42,7 @@ class BriefOutcomeRepository:
             conditions.append("tenant_id = %s")
             params.append(tenant_id)
         rows = self._conn.execute(  # type: ignore[arg-type]
-            f"SELECT id, brief_id, tenant_id, outcome, note, created_at FROM cortex_brief_outcomes WHERE {' AND '.join(conditions)} ORDER BY created_at ASC",
+            f"SELECT id, brief_id, tenant_id, outcome, note, created_at FROM cortex_brief_outcomes WHERE {' AND '.join(conditions)} ORDER BY created_at ASC, id ASC",
             tuple(params),
         ).fetchall()
         return [

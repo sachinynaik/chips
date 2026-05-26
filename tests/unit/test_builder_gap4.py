@@ -49,6 +49,16 @@ class TestProbeRuntime:
         assert status.status == "error"
         assert "ConnectionError" in status.detail or "refused" in status.detail
 
+    def test_error_when_service_returns_http_error(self, monkeypatch):
+        monkeypatch.setenv("SIGNOZ_API_URL", "http://signoz:3301")
+        from chips.mcp.tools.runtime import probe_runtime
+        import requests as req
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = req.HTTPError("500 Server Error")
+        with patch("chips.mcp.tools.runtime.requests.get", return_value=mock_resp):
+            status = probe_runtime()
+        assert status.status == "error"
+
 
 # ── probe_workflow ────────────────────────────────────────────────────────────
 
