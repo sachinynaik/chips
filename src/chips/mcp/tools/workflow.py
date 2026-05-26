@@ -13,7 +13,7 @@ def probe_workflow() -> SourceStatus:
     if not db_url:
         return SourceStatus(status="not_configured")
     try:
-        conn = psycopg.connect(db_url)
+        conn = psycopg.connect(db_url, connect_timeout=2)
         conn.execute("SELECT 1")
         conn.close()
         return SourceStatus(status="available")

@@ -109,3 +109,34 @@ def test_brief_module_register_adds_tool_to_app():
     app = FastMCP("test")
     _make_module().register(app)
     assert "get_context_brief" in list(app._tool_manager._tools.keys())
+
+
+# ── data_sources wire contract ────────────────────────────────────────────────
+
+def test_get_context_brief_serializes_data_sources_to_dict():
+    """data_sources must appear in the MCP response as {key: {status, detail}}."""
+    import uuid
+    from datetime import datetime, timezone
+    from chips.compiler.models import SourceStatus
+
+    fake_brief = MagicMock()
+    fake_brief.brief_id = uuid.uuid4()
+    fake_brief.generated_at = datetime.now(timezone.utc)
+    fake_brief.ranked_signals = []
+    fake_brief.retrieved.memories = []
+    fake_brief.data_sources = {
+        "runtime": SourceStatus(status="not_configured"),
+        "workflow": SourceStatus(status="error", detail="refused"),
+        "file_signals": SourceStatus(status="available"),
+    }
+
+    with patch("chips.mcp.modules.brief.BriefBuilder") as mock_builder_cls:
+        mock_builder = MagicMock()
+        mock_builder.build.return_value = fake_brief
+        mock_builder_cls.return_value = mock_builder
+        result = _make_module().get_context_brief(task="fix crash")
+
+    assert "data_sources" in result
+    assert result["data_sources"]["runtime"] == {"status": "not_configured", "detail": ""}
+    assert result["data_sources"]["workflow"] == {"status": "error", "detail": "refused"}
+    assert result["data_sources"]["file_signals"] == {"status": "available", "detail": ""}

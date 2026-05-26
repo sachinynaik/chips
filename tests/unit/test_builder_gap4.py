@@ -88,6 +88,16 @@ class TestProbeWorkflow:
         assert status.status == "error"
         assert status.detail != ""
 
+    def test_probe_passes_connect_timeout(self, monkeypatch):
+        monkeypatch.setenv("DBOS_DB_URL", "postgresql://user:pw@host/db")
+        from chips.mcp.tools.workflow import probe_workflow
+        with patch("chips.mcp.tools.workflow.psycopg.connect") as mock_connect:
+            mock_connect.return_value = MagicMock()
+            probe_workflow()
+        _, kwargs = mock_connect.call_args
+        assert "connect_timeout" in kwargs
+        assert kwargs["connect_timeout"] > 0
+
 
 # ── BriefBuilder integration ──────────────────────────────────────────────────
 

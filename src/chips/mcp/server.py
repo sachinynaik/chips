@@ -36,6 +36,10 @@ def get_context_brief(
         "hard_constraints": brief.hard_constraints,
         "compressed_context": brief.compressed_context,
         "schema_version": brief.schema_version,
+        "data_sources": {
+            k: {"status": v.status, "detail": v.detail}
+            for k, v in brief.data_sources.items()
+        },
     }
 
 
