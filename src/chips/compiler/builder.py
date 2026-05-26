@@ -16,6 +16,8 @@ from chips.compiler.policy import PolicyLoader
 from chips.compiler.ranker import rank_signals
 from chips.compiler.retrieval import retrieve_diffs, retrieve_file_signals, retrieve_memories
 from chips.harvester.embedding import OllamaEmbedder
+from chips.mcp.tools.runtime import probe_runtime
+from chips.mcp.tools.workflow import probe_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +159,14 @@ class BriefBuilder:
 
         diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
 
+        runtime_status = probe_runtime()
+        if runtime_status.status == "error":
+            logger.warning("runtime source probe failed: %s", runtime_status.detail)
+
+        workflow_status = probe_workflow()
+        if workflow_status.status == "error":
+            logger.warning("workflow source probe failed: %s", workflow_status.detail)
+
         ranked = rank_signals(memories, file_signals, diffs=diffs)
 
         # Collect policy forbidden/required items
@@ -201,7 +211,11 @@ class BriefBuilder:
             hard_constraints=hard_constraints,
             compressed_context=compressed,
             tenant_id=tenant_id,
-            data_sources={"file_signals": file_signals_status},
+            data_sources={
+                "file_signals": file_signals_status,
+                "runtime": runtime_status,
+                "workflow": workflow_status,
+            },
             forbidden_edits=forbidden_edits,
             allowed_edits=allowed_edits,
         )

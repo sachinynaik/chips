@@ -4,6 +4,22 @@ import os
 
 import psycopg
 
+from chips.compiler.models import SourceStatus
+
+
+def probe_workflow() -> SourceStatus:
+    """Lightweight availability probe — does not fetch data."""
+    db_url = os.getenv("DBOS_DB_URL")
+    if not db_url:
+        return SourceStatus(status="not_configured")
+    try:
+        conn = psycopg.connect(db_url)
+        conn.execute("SELECT 1")
+        conn.close()
+        return SourceStatus(status="available")
+    except Exception as exc:
+        return SourceStatus(status="error", detail=str(exc))
+
 
 def get_workflow_state(scope: str | None = None) -> dict:
     """Return failed/pending DBOS workflows. Returns status 'unavailable' if unconfigured."""
