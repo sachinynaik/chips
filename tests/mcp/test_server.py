@@ -8,13 +8,15 @@ def test_server_app_exists():
     assert app.name == "chips-cortex"
 
 
-def test_server_exposes_all_nine_tools():
+def test_server_exposes_health_and_feedback_tools():
     from chips.mcp.server import app
     registered = set(app._tool_manager._tools.keys())
     expected = {
         "search_memory",
         "get_recent_commits",
         "get_context_brief",
+        "submit_brief_feedback",
+        "get_source_health",
         "get_diffs",
         "get_runtime_context",
         "get_workflow_state",

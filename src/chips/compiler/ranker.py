@@ -40,12 +40,18 @@ def rank_signals(
     ranked: list[RankedSignal] = []
 
     for mem in memories:
-        sem = float(mem.get("similarity", 0.0))
+        sem = float(
+            mem.get("similarity")
+            if mem.get("similarity") is not None
+            else mem.get("confidence", 0.0)
+        )
+        learned = float(mem.get("learning_adjustment", 0.0))
+        score = min(max(sem + learned, 0.0), 1.0)
         ranked.append(RankedSignal(
             item_id=str(mem["id"]),
             item_type="memory",
-            score=min(sem, 1.0),
-            signal_breakdown={"semantic": sem},
+            score=score,
+            signal_breakdown={"semantic": sem, "learning_adjustment": learned},
         ))
 
     for sig in file_signals:

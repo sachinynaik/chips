@@ -1,24 +1,34 @@
 from __future__ import annotations
 
 import os
+import time
 
 import psycopg
 
 from chips.compiler.models import SourceStatus
+from chips.mcp.tools.health_tracker import record_source_probe
 
 
 def probe_workflow() -> SourceStatus:
-    """Lightweight availability probe — does not fetch data."""
+    """Lightweight availability probe that does not fetch workflow payloads."""
+    from datetime import datetime, timezone
+
     db_url = os.getenv("DBOS_DB_URL")
     if not db_url:
-        return SourceStatus(status="not_configured")
+        status = SourceStatus(status="not_configured")
+        record_source_probe("workflow", status, 0)
+        return status
+    checked_at = datetime.now(timezone.utc)
+    start = time.monotonic()
     try:
         conn = psycopg.connect(db_url, connect_timeout=2)
         conn.execute("SELECT 1")
         conn.close()
-        return SourceStatus(status="available")
+        status = SourceStatus(status="available", checked_at=checked_at)
     except Exception as exc:
-        return SourceStatus(status="error", detail=str(exc))
+        status = SourceStatus(status="error", detail=str(exc), checked_at=checked_at)
+    record_source_probe("workflow", status, int((time.monotonic() - start) * 1000))
+    return status
 
 
 def get_workflow_state(scope: str | None = None) -> dict:

@@ -23,14 +23,11 @@ def retrieve_file_signals(
 ) -> list[dict]:
     if not files:
         return []
-    conditions = ["file_path = ANY(%s)"]
-    params: list = [files]
-    if tenant_id is not None:
-        conditions.append("tenant_id = %s")
-        params.append(tenant_id)
+    from chips.tenant import build_tenant_scope
+    scoped = build_tenant_scope(["file_path = ANY(%s)"], [files], tenant_id)
     rows = conn.execute(  # type: ignore[arg-type]
-        f"SELECT file_path, churn_score, failure_count, last_changed_at FROM cortex_file_signals WHERE {' AND '.join(conditions)}",
-        tuple(params),
+        f"SELECT file_path, churn_score, failure_count, last_changed_at FROM cortex_file_signals WHERE {' AND '.join(scoped.conditions)}",
+        tuple(scoped.params),
     ).fetchall()
     return [
         {
@@ -60,11 +57,15 @@ def retrieve_cochanges(
 ) -> list[dict]:
     if not files:
         return []
-    tenant_clause = "AND tenant_id = %s" if tenant_id is not None else ""
-    extra: list = [tenant_id] if tenant_id is not None else []
+    from chips.tenant import build_tenant_scope
+    scoped = build_tenant_scope(
+        ["(file_a = ANY(%s) OR file_b = ANY(%s))"],
+        [files, files],
+        tenant_id,
+    )
     rows = conn.execute(  # type: ignore[arg-type]
-        f"SELECT file_a, file_b, frequency, last_seen_at FROM cortex_cochange_pairs WHERE (file_a = ANY(%s) OR file_b = ANY(%s)) {tenant_clause} ORDER BY frequency DESC LIMIT %s",
-        (files, files, *extra, limit),
+        f"SELECT file_a, file_b, frequency, last_seen_at FROM cortex_cochange_pairs WHERE {' AND '.join(scoped.conditions)} ORDER BY frequency DESC LIMIT %s",
+        (*scoped.params, limit),
     ).fetchall()
     return [
         {"file_a": row[0], "file_b": row[1], "frequency": row[2], "last_seen_at": row[3]}

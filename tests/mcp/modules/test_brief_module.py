@@ -72,7 +72,7 @@ def test_get_context_brief_passes_task_and_scope_to_builder():
         module.get_context_brief(task="add feature X", scope="payments")
 
     mock_builder.build.assert_called_once_with(
-        "add feature X", scope="payments", tenant_id=None
+        "add feature X", scope="payments", files=None, tenant_id=None
     )
 
 
@@ -100,7 +100,7 @@ def test_get_context_brief_threads_tenant_id_to_builder():
         module.get_context_brief(task="fix crash", scope="auth", tenant_id=_TENANT)
 
     mock_builder.build.assert_called_once_with(
-        "fix crash", scope="auth", tenant_id=_TENANT
+        "fix crash", scope="auth", files=None, tenant_id=_TENANT
     )
 
 
@@ -137,6 +137,6 @@ def test_get_context_brief_serializes_data_sources_to_dict():
         result = _make_module().get_context_brief(task="fix crash")
 
     assert "data_sources" in result
-    assert result["data_sources"]["runtime"] == {"status": "not_configured", "detail": ""}
-    assert result["data_sources"]["workflow"] == {"status": "error", "detail": "refused"}
-    assert result["data_sources"]["file_signals"] == {"status": "available", "detail": ""}
+    assert result["data_sources"]["runtime"] == {"status": "not_configured", "detail": "", "checked_at": None}
+    assert result["data_sources"]["workflow"] == {"status": "error", "detail": "refused", "checked_at": None}
+    assert result["data_sources"]["file_signals"] == {"status": "available", "detail": "", "checked_at": None}

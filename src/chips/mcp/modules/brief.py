@@ -30,8 +30,12 @@ class BriefModule:
         self,
         task: str,
         scope: str | None = None,
+        files: list[str] | None = None,
         tenant_id: str | None = None,
     ) -> dict:
+        from chips.tenant import require_tenant
+        require_tenant(tenant_id)
+
         conn = self._conn_factory()
         try:
             builder = BriefBuilder(
@@ -40,7 +44,7 @@ class BriefModule:
                 self._compressor,
                 policy_loader=self._policy_loader,
             )
-            brief = builder.build(task, scope=scope, tenant_id=tenant_id)
+            brief = builder.build(task, scope=scope, files=files, tenant_id=tenant_id)
         finally:
             conn.close()
 
@@ -56,7 +60,11 @@ class BriefModule:
             "compressed_context": brief.compressed_context,
             "schema_version": brief.schema_version,
             "data_sources": {
-                k: {"status": v.status, "detail": v.detail}
+                k: {
+                    "status": v.status,
+                    "detail": v.detail,
+                    "checked_at": v.checked_at.isoformat() if v.checked_at else None,
+                }
                 for k, v in brief.data_sources.items()
             },
             "ranked_signals": [

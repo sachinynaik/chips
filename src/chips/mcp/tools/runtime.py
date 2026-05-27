@@ -1,23 +1,33 @@
 from __future__ import annotations
 
 import os
+import time
 
 import requests
 
 from chips.compiler.models import SourceStatus
+from chips.mcp.tools.health_tracker import record_source_probe
 
 
 def probe_runtime() -> SourceStatus:
-    """Lightweight availability probe — does not fetch data."""
+    """Lightweight availability probe that does not fetch business data."""
+    from datetime import datetime, timezone
+
     base_url = os.getenv("SIGNOZ_API_URL")
     if not base_url:
-        return SourceStatus(status="not_configured")
+        status = SourceStatus(status="not_configured")
+        record_source_probe("runtime", status, 0)
+        return status
+    checked_at = datetime.now(timezone.utc)
+    start = time.monotonic()
     try:
         resp = requests.get(f"{base_url.rstrip('/')}/api/v1/services", timeout=1)
         resp.raise_for_status()
-        return SourceStatus(status="available")
+        status = SourceStatus(status="available", checked_at=checked_at)
     except Exception as exc:
-        return SourceStatus(status="error", detail=str(exc))
+        status = SourceStatus(status="error", detail=str(exc), checked_at=checked_at)
+    record_source_probe("runtime", status, int((time.monotonic() - start) * 1000))
+    return status
 
 
 def get_runtime_context(scope: str | None = None) -> dict:

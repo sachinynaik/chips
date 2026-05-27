@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import math
+
 import httpx
+
+from chips.compiler.models import SoftContextItem
 
 
 class OllamaCompressor:
@@ -9,20 +13,34 @@ class OllamaCompressor:
         base_url: str,
         model: str,
         soft_char_budget: int = 4000,
+        soft_token_budget: int | None = None,
         num_predict: int = 200,
+        max_items: int = 20,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._soft_char_budget = soft_char_budget
+        self._soft_token_budget = soft_token_budget or max(1, soft_char_budget // 4)
         self._num_predict = num_predict
+        self._max_items = max_items
 
     def compress(
         self,
         hard_constraints: list[str],
-        soft_items: list[str],
+        soft_items: list[str | SoftContextItem],
         task: str,
     ) -> str:
-        compressed_soft = self._compress_soft(soft_items, task) if soft_items else ""
+        compressed, _ = self.compress_with_trace(hard_constraints, soft_items, task)
+        return compressed
+
+    def compress_with_trace(
+        self,
+        hard_constraints: list[str],
+        soft_items: list[str | SoftContextItem],
+        task: str,
+    ) -> tuple[str, dict[str, list[str]]]:
+        normalized = self._normalize_items(soft_items)
+        compressed_soft = self._compress_soft(normalized, task) if normalized else ""
 
         parts: list[str] = []
         if hard_constraints:
@@ -30,22 +48,116 @@ class OllamaCompressor:
             parts.append(f"## Constraints (non-negotiable)\n{lines}")
         if compressed_soft:
             parts.append(f"## Context\n{compressed_soft}")
-        return "\n\n".join(parts)
 
-    def _trim_to_budget(self, items: list[str]) -> list[str]:
-        """Keep leading items (assumed pre-sorted by score) until char budget is used."""
-        result = []
-        used = 0
-        for item in items:
-            cost = len(item) + 4  # +4 for "- \n" formatting overhead
-            if used + cost > self._soft_char_budget:
-                break
-            result.append(item)
-            used += cost
-        return result if result else items[:1]
+        kept = self._trim_soft_items(normalized)
+        kept_ids = [item.item_id for item in kept]
+        kept_id_set = set(kept_ids)
+        dropped_ids = [
+            item.item_id for item in normalized if item.item_id not in kept_id_set
+        ]
+        return "\n\n".join(parts), {
+            "kept_item_ids": kept_ids,
+            "dropped_item_ids": dropped_ids,
+        }
 
-    def _compress_soft(self, soft_items: list[str], task: str) -> str:
-        trimmed = self._trim_to_budget(soft_items)
+    def _normalize_items(
+        self, items: list[str | SoftContextItem]
+    ) -> list[SoftContextItem]:
+        normalized: list[SoftContextItem] = []
+        for index, item in enumerate(items):
+            if isinstance(item, SoftContextItem):
+                normalized.append(item)
+            else:
+                normalized.append(
+                    SoftContextItem(
+                        item_id=f"generic:{index}",
+                        category="generic",
+                        text=item,
+                        score=float(len(items) - index),
+                    )
+                )
+        return normalized
+
+    @staticmethod
+    def _approx_tokens(text: str) -> int:
+        return max(1, math.ceil(len(text) / 4))
+
+    def _item_fits(
+        self,
+        item: SoftContextItem,
+        *,
+        char_used: int,
+        token_used: int,
+        item_count: int,
+    ) -> bool:
+        if item_count >= self._max_items:
+            return False
+        char_cost = len(item.text) + 4
+        token_cost = self._approx_tokens(item.text)
+        return (
+            char_used + char_cost <= self._soft_char_budget
+            and token_used + token_cost <= self._soft_token_budget
+        )
+
+    def _trim_soft_items(self, items: list[SoftContextItem]) -> list[SoftContextItem]:
+        if not items:
+            return []
+
+        ordered = sorted(items, key=lambda item: (-item.score, item.item_id))
+        char_used = 0
+        token_used = 0
+        kept: list[SoftContextItem] = []
+        seen_ids: set[str] = set()
+
+        category_heads: dict[str, SoftContextItem] = {}
+        for item in ordered:
+            category_heads.setdefault(item.category, item)
+
+        for item in category_heads.values():
+            if self._item_fits(
+                item,
+                char_used=char_used,
+                token_used=token_used,
+                item_count=len(kept),
+            ):
+                kept.append(item)
+                seen_ids.add(item.item_id)
+                char_used += len(item.text) + 4
+                token_used += self._approx_tokens(item.text)
+
+        for item in ordered:
+            if item.item_id in seen_ids:
+                continue
+            if not self._item_fits(
+                item,
+                char_used=char_used,
+                token_used=token_used,
+                item_count=len(kept),
+            ):
+                continue
+            kept.append(item)
+            seen_ids.add(item.item_id)
+            char_used += len(item.text) + 4
+            token_used += self._approx_tokens(item.text)
+
+        return kept if kept else ordered[:1]
+
+    def _trim_to_budget(
+        self, items: list[str | SoftContextItem]
+    ) -> list[str | SoftContextItem]:
+        normalized = self._normalize_items(items)
+        kept = self._trim_soft_items(normalized)
+        if items and isinstance(items[0], SoftContextItem):
+            return kept
+        kept_by_id = {item.item_id for item in kept}
+        return [
+            original
+            for index, original in enumerate(items)
+            if f"generic:{index}" in kept_by_id
+        ]
+
+    def _compress_soft(self, soft_items: list[SoftContextItem], task: str) -> str:
+        trimmed = self._trim_soft_items(soft_items)
         prompt = self._build_prompt(task, trimmed)
         try:
             with httpx.Client(timeout=30.0) as client:
@@ -61,10 +173,12 @@ class OllamaCompressor:
                 resp.raise_for_status()
             return resp.json()["response"].strip()
         except Exception:
-            return "\n".join(trimmed)
+            return "\n".join(item.text for item in trimmed)
 
-    def _build_prompt(self, task: str, soft_items: list[str]) -> str:
-        items_text = "\n".join(f"- {item}" for item in soft_items)
+    def _build_prompt(self, task: str, soft_items: list[SoftContextItem]) -> str:
+        items_text = "\n".join(
+            f"- [{item.category}] {item.text}" for item in soft_items
+        )
         return (
             f"Summarize the following engineering context for the task: {task!r}\n\n"
             f"Context items:\n{items_text}\n\n"

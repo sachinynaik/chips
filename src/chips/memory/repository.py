@@ -43,20 +43,22 @@ class MemoryRepository:
         return row[0]
 
     def get(self, memory_id: UUID, tenant_id: str | None = None) -> MemoryRecord | None:
-        conditions = ["id = %s", "archived_at IS NULL"]
-        params: list = [memory_id]
-        if tenant_id is not None:
-            conditions.append("tenant_id = %s")
-            params.append(tenant_id)
+        from chips.tenant import build_tenant_scope
+
+        scoped = build_tenant_scope(
+            ["id = %s", "archived_at IS NULL"],
+            [memory_id],
+            tenant_id,
+        )
         row = self._conn.execute(
             f"""
             SELECT id, type, scope, content, tags, evidence_refs,
                    confidence, source, author, created_at, updated_at,
                    archived_at, tenant_id, embedding, structured_findings
             FROM cortex_memories
-            WHERE {' AND '.join(conditions)}
+            WHERE {' AND '.join(scoped.conditions)}
             """,  # type: ignore[arg-type]
-            tuple(params),
+            tuple(scoped.params),
         ).fetchone()
         return self._row_to_record(row) if row else None
 
@@ -67,21 +69,23 @@ class MemoryRepository:
         )
 
     def list_by_scope(self, scope: str, tenant_id: str | None = None) -> list[MemoryRecord]:
-        conditions = ["scope = %s", "archived_at IS NULL"]
-        params: list = [scope]
-        if tenant_id is not None:
-            conditions.append("tenant_id = %s")
-            params.append(tenant_id)
+        from chips.tenant import build_tenant_scope
+
+        scoped = build_tenant_scope(
+            ["scope = %s", "archived_at IS NULL"],
+            [scope],
+            tenant_id,
+        )
         rows = self._conn.execute(
             f"""
             SELECT id, type, scope, content, tags, evidence_refs,
                    confidence, source, author, created_at, updated_at,
                    archived_at, tenant_id, embedding, structured_findings
             FROM cortex_memories
-            WHERE {' AND '.join(conditions)}
+            WHERE {' AND '.join(scoped.conditions)}
             ORDER BY created_at DESC
             """,  # type: ignore[arg-type]
-            tuple(params),
+            tuple(scoped.params),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
@@ -92,15 +96,15 @@ class MemoryRepository:
         scope: str | None = None,
         tenant_id: str | None = None,
     ) -> list[MemoryRecord]:
+        from chips.tenant import build_tenant_scope
+
         conditions = ["embedding IS NOT NULL", "archived_at IS NULL"]
         params: list = []
         if scope:
             conditions.append("scope = %s")
             params.append(scope)
-        if tenant_id is not None:
-            conditions.append("tenant_id = %s")
-            params.append(tenant_id)
-        params.extend([query_embedding, limit])
+        scoped = build_tenant_scope(conditions, params, tenant_id)
+        scoped.params.extend([query_embedding, limit])
 
         rows = self._conn.execute(
             f"""
@@ -108,11 +112,11 @@ class MemoryRepository:
                    confidence, source, author, created_at, updated_at,
                    archived_at, tenant_id, embedding, structured_findings
             FROM cortex_memories
-            WHERE {' AND '.join(conditions)}
+            WHERE {' AND '.join(scoped.conditions)}
             ORDER BY embedding <=> %s::vector
             LIMIT %s
             """,  # type: ignore[arg-type]
-            tuple(params),
+            tuple(scoped.params),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 

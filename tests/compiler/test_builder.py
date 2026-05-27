@@ -18,6 +18,7 @@ def _make_embedder(vector: list[float] | None = None) -> MagicMock:
 def _make_compressor(output: str = "compressed context") -> MagicMock:
     compressor = MagicMock()
     compressor.compress.return_value = output
+    compressor.compress_with_trace.return_value = (output, [])
     return compressor
 
 

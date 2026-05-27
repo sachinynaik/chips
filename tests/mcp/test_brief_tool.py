@@ -71,7 +71,7 @@ def test_get_context_brief_passes_scope_to_builder():
         get_context_brief(task="add feature", scope="payments")
 
     mock_cls.return_value.build.assert_called_once_with(
-        "add feature", scope="payments", tenant_id=None
+        "add feature", scope="payments", files=None, tenant_id=None
     )
 
 
@@ -90,7 +90,7 @@ def test_get_context_brief_threads_tenant_id_to_builder():
         result = get_context_brief(task="fix crash", tenant_id=_TENANT)
 
     mock_cls.return_value.build.assert_called_once_with(
-        "fix crash", scope=None, tenant_id=_TENANT
+        "fix crash", scope=None, files=None, tenant_id=_TENANT
     )
     assert result["tenant_id"] == _TENANT
 
@@ -146,7 +146,7 @@ def test_get_context_brief_data_sources_shape_matches_contract():
 
     assert "data_sources" in result
     for key, source in result["data_sources"].items():
-        assert set(source.keys()) == {"status", "detail"}, (
+        assert set(source.keys()) == {"status", "detail", "checked_at"}, (
             f"data_sources[{key!r}] has unexpected keys: {set(source.keys())}"
         )
         assert isinstance(source["status"], str)

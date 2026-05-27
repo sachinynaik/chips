@@ -69,7 +69,9 @@ def create_bus(
     from chips.mcp.modules.briefs import BriefsModule
     from chips.mcp.modules.contracts import ContractsModule
     from chips.mcp.modules.diffs import DiffsModule
+    from chips.mcp.modules.feedback import FeedbackModule
     from chips.mcp.modules.git import GitModule
+    from chips.mcp.modules.health import HealthModule
     from chips.mcp.modules.memory import MemoryModule
     from chips.mcp.modules.policy import PolicyModule
     from chips.mcp.modules.runtime import RuntimeModule
@@ -90,6 +92,7 @@ def create_bus(
 
     registry.add(MemoryModule(conn_factory=conn_factory, embedder=embedder))
     registry.add(GitModule(conn_factory=conn_factory))
+    registry.add(FeedbackModule(conn_factory=conn_factory))
     registry.add(BriefModule(
         conn_factory=conn_factory,
         embedder=embedder,
@@ -97,6 +100,7 @@ def create_bus(
         policy_loader=policy_loader,
     ))
     registry.add(DiffsModule(conn_factory=conn_factory))
+    registry.add(HealthModule())
     registry.add(RuntimeModule())
     registry.add(WorkflowModule())
     registry.add(ContractsModule(conn_factory=conn_factory))

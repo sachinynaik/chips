@@ -11,7 +11,8 @@ import psycopg
 
 from chips.compiler.classifier import classify_task
 from chips.compiler.compressor import OllamaCompressor
-from chips.compiler.models import ContextBrief, RetrievedItems, SourceStatus
+from chips.compiler.learning import BriefLearningService
+from chips.compiler.models import ContextBrief, RetrievedItems, SoftContextItem, SourceStatus
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.ranker import rank_signals
 from chips.compiler.retrieval import retrieve_diffs, retrieve_file_signals, retrieve_memories
@@ -131,18 +132,23 @@ class BriefBuilder:
         files: list[str] | None = None,
         tenant_id: str | None = None,
     ) -> ContextBrief:
-        if tenant_id is None and os.getenv("CHIPS_REQUIRE_TENANT_ID"):
-            raise ValueError(
-                "BriefBuilder.build() called without tenant_id but "
-                "CHIPS_REQUIRE_TENANT_ID is set — all production builds require a tenant"
-            )
+        from chips.tenant import require_tenant
+        require_tenant(tenant_id)
 
         start = time.monotonic()
 
         task_kind = classify_task(task)
         embedding = self._embedder.embed(task)
+        learning = BriefLearningService(self._conn)
+        adjustments = learning.load_adjustments(tenant_id=tenant_id)
 
         memories = retrieve_memories(self._conn, embedding, scope=scope, tenant_id=tenant_id)
+        for memory in memories:
+            adjustment = adjustments.get(str(memory.get("id", "")), 0.0)
+            memory["learning_adjustment"] = adjustment
+            memory["confidence"] = min(
+                max(float(memory.get("confidence") or 0.0) + adjustment, 0.0), 1.0
+            )
 
         effective_files = files if files else []
         file_signals = retrieve_file_signals(
@@ -187,23 +193,41 @@ class BriefBuilder:
 
         # Build scored soft items then sort by relevance before compression.
         score_by_id: dict[str, float] = {s.item_id: s.score for s in ranked}
-        scored_soft: list[tuple[float, str]] = []
+        soft_items: list[SoftContextItem] = []
         for m in memories:
             if m.get("type") not in ("invariant", "contract"):
-                scored_soft.append(
-                    (score_by_id.get(str(m.get("id", "")), 0.0), m["content"])
+                soft_items.append(
+                    SoftContextItem(
+                        item_id=str(m.get("id", "")),
+                        category="memory",
+                        text=m["content"],
+                        score=score_by_id.get(str(m.get("id", "")), 0.0),
+                    )
                 )
         for d in diffs:
             sha = str(d.get("sha", ""))
-            scored_soft.append(
-                (score_by_id.get(sha, 0.0), f"Commit {sha[:8]}: {d['message']}")
+            soft_items.append(
+                SoftContextItem(
+                    item_id=sha,
+                    category="diff",
+                    text=f"Commit {sha[:8]}: {d['message']}",
+                    score=score_by_id.get(sha, 0.0),
+                )
             )
-        for item in soft_additions:
-            scored_soft.append((0.0, item))
-        scored_soft.sort(key=lambda x: x[0], reverse=True)
-        soft_items = [text for _, text in scored_soft]
+        for index, item in enumerate(soft_additions):
+            soft_items.append(
+                SoftContextItem(
+                    item_id=f"finding:{index}",
+                    category="finding",
+                    text=item,
+                    score=0.0,
+                )
+            )
+        soft_items.sort(key=lambda item: (-item.score, item.item_id))
 
-        compressed = self._compressor.compress(hard_constraints, soft_items, task)
+        compressed, compression_trace = self._compressor.compress_with_trace(
+            hard_constraints, soft_items, task
+        )
 
         latency_ms = int((time.monotonic() - start) * 1000)
         brief_id = uuid.uuid4()
@@ -226,6 +250,7 @@ class BriefBuilder:
                 "runtime": runtime_status,
                 "workflow": workflow_status,
             },
+            compression_trace=compression_trace,
             forbidden_edits=forbidden_edits,
             allowed_edits=allowed_edits,
         )
@@ -234,13 +259,30 @@ class BriefBuilder:
         return brief
 
     def _persist(self, brief: ContextBrief) -> None:
+        data_sources_json = json.dumps({
+            k: {
+                "status": v.status,
+                "detail": v.detail,
+                "checked_at": v.checked_at.isoformat() if v.checked_at else None,
+            }
+            for k, v in brief.data_sources.items()
+        })
+        ranked_signals_json = json.dumps([
+            {
+                "item_id": s.item_id,
+                "item_type": s.item_type,
+                "score": s.score,
+                "signal_breakdown": s.signal_breakdown,
+            }
+            for s in brief.ranked_signals
+        ])
         self._conn.execute(
             """
             INSERT INTO cortex_briefs (
                 brief_id, task, scope, generated_at, latency_ms,
                 retrieved_memories, retrieved_diffs, compressed_context, hard_constraints,
-                tenant_id
-            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s)
+                tenant_id, data_sources, ranked_signals, compression_trace
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s, %s::jsonb, %s::jsonb, %s::jsonb)
             """,
             (
                 str(brief.brief_id),
@@ -253,6 +295,9 @@ class BriefBuilder:
                 brief.compressed_context,
                 json.dumps(brief.hard_constraints),
                 brief.tenant_id,
+                data_sources_json,
+                ranked_signals_json,
+                json.dumps(brief.compression_trace),
             ),
         )
         self._conn.commit()

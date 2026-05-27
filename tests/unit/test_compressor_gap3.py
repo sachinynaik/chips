@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from chips.compiler.compressor import OllamaCompressor
+from chips.compiler.models import SoftContextItem
 
 
 def _mock_ollama(text: str = "summary") -> MagicMock:
@@ -101,3 +102,32 @@ def test_trim_is_deterministic_for_same_input():
     result1 = comp._trim_to_budget(items)
     result2 = comp._trim_to_budget(items)
     assert result1 == result2
+
+
+def test_trim_preserves_category_coverage_when_budget_allows():
+    comp = _make(soft_char_budget=90)
+    items = [
+        SoftContextItem(item_id="m1", category="memory", text="m" * 20, score=3.0),
+        SoftContextItem(item_id="d1", category="diff", text="d" * 20, score=2.0),
+        SoftContextItem(item_id="f1", category="finding", text="f" * 20, score=1.0),
+    ]
+    trimmed = comp._trim_to_budget(items)
+    assert {item.category for item in trimmed} == {"memory", "diff", "finding"}
+
+
+def test_compress_with_trace_returns_kept_and_dropped_ids():
+    comp = _make(soft_char_budget=50)
+    items = [
+        SoftContextItem(item_id="m1", category="memory", text="a" * 30, score=2.0),
+        SoftContextItem(item_id="d1", category="diff", text="b" * 30, score=1.0),
+    ]
+
+    with patch("httpx.Client.post", side_effect=Exception("refused")):
+        _, trace = comp.compress_with_trace(
+            hard_constraints=[],
+            soft_items=items,
+            task="fix it",
+        )
+
+    assert "m1" in trace["kept_item_ids"]
+    assert "d1" in trace["dropped_item_ids"]
