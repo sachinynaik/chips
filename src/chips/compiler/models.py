@@ -48,3 +48,87 @@ class ContextBrief:
     schema_version: int = 1
     forbidden_edits: list[str] = field(default_factory=list)
     allowed_edits: list[str] = field(default_factory=list)
+
+
+# ── Phase 1: evidence-ranked hypotheses ──────────────────────────────────────
+# Contract: docs/27_05_phase1_evidence_hypotheses_contract.md
+
+EvidenceKind = Literal[
+    "constraint", "memory", "diff", "finding", "structural", "workflow", "rule", "span"
+]
+ConstraintKind = Literal["forbidden", "invariant", "known_issue"]
+
+
+@dataclass(frozen=True)
+class EvidenceItem:
+    """A single citable evidence item with a stable, content-derived ID.
+
+    For constraints, ``constraint_kind`` and ``target`` are first-class (never
+    render-only): contradiction scoring reads them directly. ``target`` keys:
+    {path?, symbol?, workflow_step?, rule_id?}.
+    """
+    evidence_id: str            # "<kind>:<natural-key>" — stable across compiles
+    kind: EvidenceKind
+    label: str                  # compact, stable — for logs / UI / write-back review
+    text: str                   # full agent-readable content
+    weight: float = 0.0         # ranker score; constraints carry authority weight 1.0
+    constraint_kind: ConstraintKind | None = None  # set iff kind == "constraint"
+    target: dict = field(default_factory=dict)
+    refs: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EvidenceBundle:
+    """Typed, stable-ID projection of a brief's signals.
+
+    Two lists, deliberately: ``constraints`` is the non-negotiable layer that
+    contradiction is scored against; ``evidence`` is the citable soft pool.
+    """
+    bundle_id: UUID                                   # == brief_id
+    constraints: list[EvidenceItem] = field(default_factory=list)
+    evidence: list[EvidenceItem] = field(default_factory=list)
+
+    def by_id(self, evidence_id: str) -> EvidenceItem | None:
+        for item in (*self.constraints, *self.evidence):
+            if item.evidence_id == evidence_id:
+                return item
+        return None
+
+    def constraint_by_id(self, evidence_id: str) -> EvidenceItem | None:
+        for item in self.constraints:
+            if item.evidence_id == evidence_id:
+                return item
+        return None
+
+
+@dataclass(frozen=True)
+class Hypothesis:
+    """A bug hypothesis emitted by the agent. ``rank_hint`` is advisory only and
+    never enters the deterministic score. ``touched_paths``/``touched_symbols``/
+    ``declared_violations`` make contradiction scoring deterministic.
+    """
+    hypothesis_id: str
+    claim: str
+    mechanism: str
+    cited_evidence: list[str] = field(default_factory=list)
+    touched_paths: list[str] = field(default_factory=list)
+    touched_symbols: list[str] = field(default_factory=list)
+    declared_violations: list[str] = field(default_factory=list)  # constraint IDs only
+    predicted_checks: list[str] = field(default_factory=list)
+    rank_hint: float | None = None
+
+
+@dataclass(frozen=True)
+class ConstraintCandidate:
+    """Review-queue payload for a pruned-wrong / rejected hypothesis. NOT an active
+    cortex_constraints row until promoted (manually) via cortex_add_constraint.
+    """
+    claim: str
+    mechanism: str
+    cited_evidence: list[str]
+    source_brief_id: UUID
+    source_hypothesis_id: str
+    tenant_id: str | None
+    scope: str | None
+    proposed_kind: ConstraintKind = "known_issue"
+    proposed_target: dict = field(default_factory=dict)
