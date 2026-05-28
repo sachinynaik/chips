@@ -6,6 +6,24 @@ import httpx
 
 from chips.compiler.models import SoftContextItem
 
+try:
+    import tiktoken as _tiktoken
+    _TIKTOKEN_AVAILABLE = True
+except ImportError:
+    _TIKTOKEN_AVAILABLE = False
+
+# cl100k_base (GPT-4 / text-embedding-3) is a good approximation for code-focused
+# models including Qwen variants; within ~10-15% of their actual token counts.
+_DEFAULT_TIKTOKEN_ENCODING = "cl100k_base"
+
+
+def _build_token_counter(encoding_name: str):
+    """Return a callable (text) -> int using tiktoken, or fall back to char/4."""
+    if not _TIKTOKEN_AVAILABLE:
+        return lambda text: max(1, math.ceil(len(text) / 4))
+    enc = _tiktoken.get_encoding(encoding_name)
+    return lambda text: max(1, len(enc.encode(text, disallowed_special=())))
+
 
 class OllamaCompressor:
     def __init__(
@@ -16,6 +34,7 @@ class OllamaCompressor:
         soft_token_budget: int | None = None,
         num_predict: int = 200,
         max_items: int = 20,
+        tiktoken_encoding: str = _DEFAULT_TIKTOKEN_ENCODING,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
@@ -23,6 +42,7 @@ class OllamaCompressor:
         self._soft_token_budget = soft_token_budget or max(1, soft_char_budget // 4)
         self._num_predict = num_predict
         self._max_items = max_items
+        self._count_tokens = _build_token_counter(tiktoken_encoding)
 
     def compress(
         self,
@@ -78,10 +98,6 @@ class OllamaCompressor:
                 )
         return normalized
 
-    @staticmethod
-    def _approx_tokens(text: str) -> int:
-        return max(1, math.ceil(len(text) / 4))
-
     def _item_fits(
         self,
         item: SoftContextItem,
@@ -93,7 +109,7 @@ class OllamaCompressor:
         if item_count >= self._max_items:
             return False
         char_cost = len(item.text) + 4
-        token_cost = self._approx_tokens(item.text)
+        token_cost = self._count_tokens(item.text)
         return (
             char_used + char_cost <= self._soft_char_budget
             and token_used + token_cost <= self._soft_token_budget
@@ -123,7 +139,7 @@ class OllamaCompressor:
                 kept.append(item)
                 seen_ids.add(item.item_id)
                 char_used += len(item.text) + 4
-                token_used += self._approx_tokens(item.text)
+                token_used += self._count_tokens(item.text)
 
         for item in ordered:
             if item.item_id in seen_ids:
@@ -138,7 +154,7 @@ class OllamaCompressor:
             kept.append(item)
             seen_ids.add(item.item_id)
             char_used += len(item.text) + 4
-            token_used += self._approx_tokens(item.text)
+            token_used += self._count_tokens(item.text)
 
         return kept if kept else ordered[:1]
 
