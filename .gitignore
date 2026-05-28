@@ -17,3 +17,13 @@ wheels/
 
 # Graphify generated output
 graphify-out/
+
+# Serena project memories (machine-generated per session)
+.serena/memories/
+
+# Test / coverage / tooling artifacts
+.coverage
+.clone/
+.flashrank_cache/
+.hypothesis/
+tmp_pytest/
