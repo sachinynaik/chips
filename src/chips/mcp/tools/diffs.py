@@ -9,7 +9,9 @@ def get_diffs_for_scope(
     limit: int = 10,
     tenant_id: str | None = None,
 ) -> dict:
-    commit_conditions = []
+    from chips.tenant import apply_tenant_clause
+
+    commit_conditions: list[str] = []
     commit_params: list = []
 
     if scope:
@@ -17,9 +19,7 @@ def get_diffs_for_scope(
             "EXISTS (SELECT 1 FROM unnest(files_changed) AS f WHERE f ILIKE %s)"
         )
         commit_params.append(f"%{scope}%")
-    if tenant_id is not None:
-        commit_conditions.append("tenant_id = %s")
-        commit_params.append(tenant_id)
+    apply_tenant_clause(commit_conditions, commit_params, tenant_id)
 
     where_clause = f"WHERE {' AND '.join(commit_conditions)}" if commit_conditions else ""
     commit_params.append(limit)
@@ -39,11 +39,9 @@ def get_diffs_for_scope(
     for sha, author, committed_at, message, files_changed in rows:
         files = list(files_changed) if files_changed else []
 
-        cochange_conditions = ["(file_a = ANY(%s) OR file_b = ANY(%s))"]
+        cochange_conditions: list[str] = ["(file_a = ANY(%s) OR file_b = ANY(%s))"]
         cochange_params: list = [files, files]
-        if tenant_id is not None:
-            cochange_conditions.append("tenant_id = %s")
-            cochange_params.append(tenant_id)
+        apply_tenant_clause(cochange_conditions, cochange_params, tenant_id)
 
         pairs = conn.execute(
             f"""

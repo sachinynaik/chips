@@ -12,7 +12,10 @@ def _build_with_mocks(**kwargs):
     builder = BriefBuilder(
         conn=MagicMock(),
         embedder=MagicMock(embed=MagicMock(return_value=[0.1] * 768)),
-        compressor=MagicMock(compress=MagicMock(return_value="compressed")),
+        compressor=MagicMock(
+            compress=MagicMock(return_value="compressed"),
+            compress_with_trace=MagicMock(return_value=("compressed", [])),
+        ),
     )
     with (
         patch("chips.compiler.builder.retrieve_memories", return_value=[]),

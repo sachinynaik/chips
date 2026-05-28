@@ -14,8 +14,17 @@ from chips.compiler.compressor import OllamaCompressor
 from chips.compiler.learning import BriefLearningService
 from chips.compiler.models import ContextBrief, RetrievedItems, SoftContextItem, SourceStatus
 from chips.compiler.policy import PolicyLoader
+from chips.compiler.constraint_repository import ConstraintRepository
+from chips.compiler.constraints import (
+    assemble_forbidden_edits,
+    assemble_hard_constraints,
+    effective_allowed_edits,
+)
+from chips.compiler.governor import GovernorDecision, evaluate as governor_evaluate
 from chips.compiler.ranker import rank_signals
+from chips.compiler.reranker import rerank
 from chips.compiler.retrieval import retrieve_diffs, retrieve_file_signals, retrieve_memories
+from chips.compiler.structural import retrieve_structural
 from chips.harvester.embedding import OllamaEmbedder
 from chips.mcp.tools.runtime import probe_runtime
 from chips.mcp.tools.workflow import probe_workflow
@@ -150,20 +159,39 @@ class BriefBuilder:
                 max(float(memory.get("confidence") or 0.0) + adjustment, 0.0), 1.0
             )
 
-        effective_files = files if files else []
-        file_signals = retrieve_file_signals(
-            self._conn, effective_files, tenant_id=tenant_id
-        )
-        if not effective_files:
-            file_signals_status = SourceStatus(
-                status="not_configured", detail="no files provided to build()"
-            )
-        elif file_signals:
-            file_signals_status = SourceStatus(status="available")
-        else:
-            file_signals_status = SourceStatus(status="unavailable")
+        # Governor: if memories are already high-confidence, skip secondary sources.
+        governor = governor_evaluate(memories)
 
-        diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
+        effective_files = files if files else []
+        if governor.triggered:
+            file_signals = []
+            file_signals_status = SourceStatus(
+                status="not_configured",
+                detail=f"governor short-circuit: {governor.reason}",
+            )
+            diffs = []
+        else:
+            file_signals = retrieve_file_signals(
+                self._conn, effective_files, tenant_id=tenant_id
+            )
+            if not effective_files:
+                file_signals_status = SourceStatus(
+                    status="not_configured", detail="no files provided to build()"
+                )
+            elif file_signals:
+                file_signals_status = SourceStatus(status="available")
+            else:
+                file_signals_status = SourceStatus(status="unavailable")
+
+            diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
+
+        # Structural retrieval: AST call-graph walk over provided files.
+        structural_items: list[dict] = []
+        if effective_files and not governor.triggered:
+            try:
+                structural_items = retrieve_structural(effective_files)
+            except Exception as exc:
+                logger.warning("structural retrieval failed: %s", exc)
 
         runtime_status = probe_runtime()
         if runtime_status.status == "error":
@@ -175,21 +203,34 @@ class BriefBuilder:
 
         ranked = rank_signals(memories, file_signals, diffs=diffs)
 
-        # Collect policy forbidden/required items
-        forbidden_edits: list[str] = []
-        allowed_edits: list[str] = []
+        # Static policy layer
+        policy_forbidden: list[str] = []
+        policy_required: list[str] = []
         if self._policy_loader is not None:
             for policy in self._policy_loader.for_scope(scope):
-                forbidden_edits.extend(policy.forbidden)
-                allowed_edits.extend(policy.required)
+                policy_forbidden.extend(policy.forbidden)
+                policy_required.extend(policy.required)
 
-        # Hard constraints = memory invariants/contracts + policy forbidden items
+        # Dynamic policy layer: learned anti-regression / declared constraints for scope.
+        learned = ConstraintRepository(self._conn).for_scope(scope, tenant_id=tenant_id)
+
+        # Hard constraints in locked precedence order (learned forbidden, policy
+        # forbidden, learned invariant, memory invariants, learned known_issue,
+        # findings). forbidden_edits stays strictly prohibitive; a forbidden/invariant
+        # constraint overrides a conflicting allowed edit (restrictive wins).
         memory_constraints = [
             m["content"] for m in memories
             if m.get("type") in ("invariant", "contract")
         ]
         hard_additions, soft_additions = _extract_brief_signals(memories)
-        hard_constraints = memory_constraints + forbidden_edits + hard_additions
+        hard_constraints = assemble_hard_constraints(
+            learned,
+            policy_forbidden=policy_forbidden,
+            memory_invariants=memory_constraints,
+            hard_additions=hard_additions,
+        )
+        forbidden_edits = assemble_forbidden_edits(learned, policy_forbidden)
+        allowed_edits = effective_allowed_edits(policy_required, learned)
 
         # Build scored soft items then sort by relevance before compression.
         score_by_id: dict[str, float] = {s.item_id: s.score for s in ranked}
@@ -223,7 +264,19 @@ class BriefBuilder:
                     score=0.0,
                 )
             )
+        for s in structural_items:
+            soft_items.append(
+                SoftContextItem(
+                    item_id=s["item_id"],
+                    category="structural",
+                    text=s["text"],
+                    score=0.0,
+                )
+            )
         soft_items.sort(key=lambda item: (-item.score, item.item_id))
+
+        # Rerank soft items using cross-encoder so query-item relevance beats raw scores.
+        ranked, soft_items = rerank(task, ranked, soft_items)
 
         compressed, compression_trace = self._compressor.compress_with_trace(
             hard_constraints, soft_items, task
@@ -253,6 +306,13 @@ class BriefBuilder:
             compression_trace=compression_trace,
             forbidden_edits=forbidden_edits,
             allowed_edits=allowed_edits,
+            governor_decision={
+                "triggered": governor.triggered,
+                "mean_confidence": governor.mean_confidence,
+                "item_count": governor.item_count,
+                "skipped_sources": governor.skipped_sources,
+                "reason": governor.reason,
+            },
         )
 
         self._persist(brief)

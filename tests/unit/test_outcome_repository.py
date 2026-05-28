@@ -9,9 +9,14 @@ from chips.memory.outcome_repository import BriefOutcomeRepository
 
 def _make_repo():
     conn = MagicMock()
-    # execute().fetchone() returns a mock row with an id
     fake_id = str(uuid.uuid4())
-    conn.execute.return_value.fetchone.return_value = (fake_id,)
+    # Brief existence check: brief found, stored tenant = None (dev/unscoped mode).
+    brief_mock = MagicMock()
+    brief_mock.fetchone.return_value = (None,)
+    # INSERT RETURNING id
+    insert_mock = MagicMock()
+    insert_mock.fetchone.return_value = (fake_id,)
+    conn.execute.side_effect = [brief_mock, insert_mock]
     return BriefOutcomeRepository(conn), conn, fake_id
 
 
@@ -56,16 +61,16 @@ def test_record_passes_none_tenant_when_omitted():
 
 
 def test_get_for_brief_returns_list():
-    repo, conn, _ = _make_repo()
+    conn = MagicMock()
     conn.execute.return_value.fetchall.return_value = []
-    result = repo.get_for_brief(uuid.uuid4())
+    result = BriefOutcomeRepository(conn).get_for_brief(uuid.uuid4())
     assert isinstance(result, list)
 
 
 def test_get_for_brief_includes_tenant_filter_when_provided():
-    repo, conn, _ = _make_repo()
+    conn = MagicMock()
     conn.execute.return_value.fetchall.return_value = []
     tenant = "cccccccc-0000-0000-0000-000000000001"
-    repo.get_for_brief(uuid.uuid4(), tenant_id=tenant)
+    BriefOutcomeRepository(conn).get_for_brief(uuid.uuid4(), tenant_id=tenant)
     sql = conn.execute.call_args[0][0]
     assert "tenant_id" in sql

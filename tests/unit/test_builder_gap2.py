@@ -10,7 +10,10 @@ def _make_builder():
     return BriefBuilder(
         conn=MagicMock(),
         embedder=MagicMock(embed=MagicMock(return_value=[0.1] * 768)),
-        compressor=MagicMock(compress=MagicMock(return_value="compressed")),
+        compressor=MagicMock(
+            compress=MagicMock(return_value="compressed"),
+            compress_with_trace=MagicMock(return_value=("compressed", [])),
+        ),
     )
 
 

@@ -28,6 +28,15 @@ class RetrievedItems:
 class SourceStatus:
     status: Literal["not_configured", "available", "unavailable", "error"]
     detail: str = ""
+    checked_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class SoftContextItem:
+    item_id: str
+    category: Literal["memory", "diff", "finding", "file", "structural", "generic"]
+    text: str
+    score: float = 0.0
 
 
 @dataclass
@@ -46,8 +55,10 @@ class ContextBrief:
     tenant_id: str | None = None
     data_sources: dict[str, SourceStatus] = field(default_factory=dict)
     schema_version: int = 1
+    compression_trace: dict[str, list[str]] = field(default_factory=dict)
     forbidden_edits: list[str] = field(default_factory=list)
     allowed_edits: list[str] = field(default_factory=list)
+    governor_decision: dict = field(default_factory=dict)
 
 
 # ── Phase 1: evidence-ranked hypotheses ──────────────────────────────────────
@@ -132,3 +143,23 @@ class ConstraintCandidate:
     scope: str | None
     proposed_kind: ConstraintKind = "known_issue"
     proposed_target: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Constraint:
+    """A cortex_constraints row: a durable, scoped policy artifact (Phase 0).
+
+    The dynamic policy layer beside the static PolicyLoader. ``scope_pattern`` is
+    '*' (global within tenant) or an exact scope, mirroring PolicyLoader.for_scope.
+    """
+    id: UUID
+    tenant_id: str | None
+    scope_pattern: str
+    kind: ConstraintKind
+    text: str
+    reason: str | None = None
+    source_kind: str | None = None
+    source_ref: str | None = None
+    target: dict = field(default_factory=dict)
+    status: str = "active"
+    created_at: datetime | None = None
