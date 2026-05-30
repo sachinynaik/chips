@@ -65,6 +65,23 @@ def _soft(kind: str, item: dict, text: str) -> tuple[str, str]:
     return finding_evidence_id(_normalized_finding(kind, item)), text
 
 
+def _apply_learning_adjustments(
+    memories: list[dict], adjustments: dict[str, float]
+) -> None:
+    """Attach each memory's learning adjustment for the ranker — WITHOUT mutating
+    ``confidence``.
+
+    The adjustment biases *ranking* only: ``rank_signals`` adds ``learning_adjustment``
+    to the semantic score. It must not touch ``confidence``, because (a) the governor
+    reads ``confidence`` as a *pre-learning* retrieval signal (see ``governor.evaluate``)
+    and a leaked adjustment can wrongly trip its short-circuit on the no-``similarity``
+    fallback path, and (b) the ranker would then double-count the adjustment (``sem``
+    falls back to the mutated confidence, then adds ``learning_adjustment`` again).
+    """
+    for memory in memories:
+        memory["learning_adjustment"] = adjustments.get(str(memory.get("id", "")), 0.0)
+
+
 def _extract_brief_signals(
     memories: list[dict],
 ) -> tuple[list[str], list[tuple[str, str]]]:
@@ -196,12 +213,7 @@ class BriefBuilder:
         adjustments = learning.load_adjustments(tenant_id=tenant_id)
 
         memories = retrieve_memories(self._conn, embedding, scope=scope, tenant_id=tenant_id)
-        for memory in memories:
-            adjustment = adjustments.get(str(memory.get("id", "")), 0.0)
-            memory["learning_adjustment"] = adjustment
-            memory["confidence"] = min(
-                max(float(memory.get("confidence") or 0.0) + adjustment, 0.0), 1.0
-            )
+        _apply_learning_adjustments(memories, adjustments)
 
         # Governor: if memories are already high-confidence, skip secondary sources.
         governor = governor_evaluate(memories)

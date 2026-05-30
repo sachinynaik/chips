@@ -105,7 +105,13 @@ contract §A). Removes this limitation.
 
 ---
 
-## L8 — Learning adjustment can trip the governor on the confidence-fallback path
+## L8 — Learning adjustment can trip the governor on the confidence-fallback path — ✅ RESOLVED 2026-05-31
+
+> **Resolved** by extracting `_apply_learning_adjustments` (sets only
+> `learning_adjustment`, never mutates `confidence`). The governor now always reads the
+> raw retrieval score per its contract, and the ranker no longer double-counts the
+> adjustment. See `tests/unit/test_learning_governor_decoupling.py`. Original report below.
+
 
 **Location:** `src/chips/compiler/builder.py` (learning applied to `memory["confidence"]`) →
 `src/chips/compiler/governor.py` (mean-confidence short-circuit)  
