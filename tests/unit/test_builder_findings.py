@@ -68,7 +68,7 @@ def test_low_security_goes_to_soft():
 
     assert hard == []
     assert len(soft) == 1
-    assert "B404" in soft[0]
+    assert "B404" in soft[0][1]
 
 
 def test_architecture_violation_goes_to_hard():
@@ -91,9 +91,9 @@ def test_dead_code_goes_to_soft():
 
     assert hard == []
     assert len(soft) == 1
-    assert "old_util" in soft[0]
-    assert "utils.py" in soft[0]
-    assert "80%" in soft[0]
+    assert "old_util" in soft[0][1]
+    assert "utils.py" in soft[0][1]
+    assert "80%" in soft[0][1]
 
 
 def test_api_surface_goes_to_soft():
@@ -104,9 +104,9 @@ def test_api_surface_goes_to_soft():
 
     assert hard == []
     assert len(soft) == 1
-    assert "removed" in soft[0]
-    assert "MyClass.foo" in soft[0]
-    assert "parameter dropped" in soft[0]
+    assert "removed" in soft[0][1]
+    assert "MyClass.foo" in soft[0][1]
+    assert "parameter dropped" in soft[0][1]
 
 
 def test_clone_goes_to_soft():
@@ -117,9 +117,9 @@ def test_clone_goes_to_soft():
 
     assert hard == []
     assert len(soft) == 1
-    assert "15" in soft[0]
-    assert "src/a.py" in soft[0]
-    assert "src/b.py" in soft[0]
+    assert "15" in soft[0][1]
+    assert "src/a.py" in soft[0][1]
+    assert "src/b.py" in soft[0][1]
 
 
 def test_type_error_goes_to_soft():
@@ -130,9 +130,9 @@ def test_type_error_goes_to_soft():
 
     assert hard == []
     assert len(soft) == 1
-    assert "E203" in soft[0]
-    assert "42" in soft[0]
-    assert "incompatible types" in soft[0]
+    assert "E203" in soft[0][1]
+    assert "42" in soft[0][1]
+    assert "incompatible types" in soft[0][1]
 
 
 def test_uncovered_changes_goes_to_soft():
@@ -144,8 +144,8 @@ def test_uncovered_changes_goes_to_soft():
 
     assert hard == []
     assert len(soft) == 1
-    assert "repository.py" in soft[0]
-    assert "7" in soft[0]
+    assert "repository.py" in soft[0][1]
+    assert "7" in soft[0][1]
 
 
 def test_multiple_memories_findings_aggregated():
@@ -163,4 +163,4 @@ def test_multiple_memories_findings_aggregated():
     assert "B602" in hard[0]
 
     assert len(soft) == 1
-    assert "OldManager" in soft[0]
+    assert "OldManager" in soft[0][1]

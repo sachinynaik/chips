@@ -45,6 +45,25 @@ Out of scope for v1: §J.
 
 **Mandatory prereq fix:** `builder.py` currently assigns findings `f"finding:{index}"` (positional). This violates the stability rule and **must** change to `find:<content-hash>` before anything else in this phase. Content hash = `sha256` of the normalized finding fields (e.g. for security: `test_id|file|line|message`), truncated to 12 hex chars.
 
+**Per-kind normalization (LOCKED 2026-05-31).** The content hash is computed over a normalized
+dict built from each finding's *identity-bearing* fields only — volatile metrics (`severity`,
+`confidence`, `changed_lines_missing`, scores) are excluded so a re-tune of those does not mint
+a new ID. Every normalized dict carries a `"kind"` discriminator (the finding category) so two
+different kinds cannot collide on `find:`. The hash is `evidence.finding_evidence_id(normalized)`.
+
+| Soft finding kind | Normalized fields (besides `kind`) | Notes |
+|---|---|---|
+| `security` (LOW) | `test_id, file, line, message` | per the §A example; `severity` excluded |
+| `dead_code` | `type, name, file` | `confidence` (%) excluded — volatile |
+| `api_surface` | `change_type, symbol, details` | `details` first to drop if it proves brittle |
+| `clones` | `files` (= `sorted([file_a, file_b])`), `lines` | pair sorted so A/B order can't flip the ID |
+| `type_errors` | `code, line, message` | ⚠️ extractor does not capture `file` today; add later in harvester (does not change existing IDs since `kind`+`code`+`line`+`message` stay fixed) |
+| `uncovered_changes` | `path` | one entry per path; the missing-line count is excluded |
+
+Hard findings (security HIGH/MEDIUM, architecture violations) become `hard_constraints` text, not
+`EvidenceItem`s, so they carry no `find:` ID in v1. Only **soft** findings (which become
+`SoftContextItem`s) are assigned stable `find:` IDs.
+
 ---
 
 ## B. EvidenceBundle / EvidenceItem (`models.py`)

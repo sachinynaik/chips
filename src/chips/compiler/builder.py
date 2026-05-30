@@ -15,6 +15,7 @@ from chips.compiler.learning import BriefLearningService
 from chips.compiler.models import ContextBrief, RetrievedItems, SoftContextItem, SourceStatus
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.constraint_repository import ConstraintRepository
+from chips.compiler.evidence import finding_evidence_id
 from chips.compiler.constraints import (
     assemble_forbidden_edits,
     assemble_hard_constraints,
@@ -32,14 +33,48 @@ from chips.mcp.tools.workflow import probe_workflow
 logger = logging.getLogger(__name__)
 
 
+def _normalized_finding(kind: str, item: dict) -> dict:
+    """Identity-bearing fields of a soft finding, for the stable ``find:`` content hash.
+
+    Contract §A (LOCKED 2026-05-31): hash over identity fields only — volatile metrics
+    (``severity``/``confidence``/missing-line counts) are excluded so re-tuning them does
+    not mint a new ID. The ``kind`` discriminator keeps distinct kinds from colliding.
+    Kept here (not in ``evidence.py``) so the pure ID module stays kind-agnostic.
+    """
+    if kind == "security":
+        return {"kind": kind, "test_id": item.get("test_id", ""), "file": item.get("file", ""),
+                "line": item.get("line", "?"), "message": item.get("message", "")}
+    if kind == "dead_code":
+        return {"kind": kind, "type": item.get("type", ""), "name": item.get("name", ""),
+                "file": item.get("file", "")}
+    if kind == "api_surface":
+        return {"kind": kind, "change_type": item.get("change_type", ""),
+                "symbol": item.get("symbol", ""), "details": item.get("details", "")}
+    if kind == "clones":
+        return {"kind": kind, "files": sorted([item.get("file_a", ""), item.get("file_b", "")]),
+                "lines": item.get("lines", "?")}
+    if kind == "type_errors":
+        return {"kind": kind, "code": item.get("code", ""), "line": item.get("line", "?"),
+                "message": item.get("message", "")}
+    # uncovered_changes is handled inline (its identity is the path string, not a dict).
+    return {"kind": kind, **item}
+
+
+def _soft(kind: str, item: dict, text: str) -> tuple[str, str]:
+    """Pair a soft finding's stable ``find:`` ID with its rendered text."""
+    return finding_evidence_id(_normalized_finding(kind, item)), text
+
+
 def _extract_brief_signals(
     memories: list[dict],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[tuple[str, str]]]:
     """Extract hard_additions and soft_additions from structured_findings in memories.
 
-    hard_additions: HIGH/MEDIUM security findings, architecture violations.
-    soft_additions: dead code, API surface issues, clones, type errors,
-                    uncovered changes, LOW security findings.
+    hard_additions: HIGH/MEDIUM security findings, architecture violations (plain text —
+        these become ``hard_constraints``, not citable evidence, so they carry no ID).
+    soft_additions: ``(find_id, text)`` pairs for dead code, API surface issues, clones,
+        type errors, uncovered changes, and LOW security findings. The ID is the stable
+        ``find:<content-hash>`` (contract §A), replacing the old positional ``finding:{i}``.
 
     structured_findings schema (produced by chips.harvester.findings.extract_findings):
       security: list[dict]  — sorted by severity desc
@@ -53,7 +88,7 @@ def _extract_brief_signals(
       uncovered_changes: dict[path, {changed_lines_missing, changed_lines_coverage_pct}]
     """
     hard_additions: list[str] = []
-    soft_additions: list[str] = []
+    soft_additions: list[tuple[str, str]] = []
 
     for memory in memories:
         findings = memory.get("structured_findings", {}) or {}
@@ -69,7 +104,7 @@ def _extract_brief_signals(
             if severity in ("HIGH", "MEDIUM"):
                 hard_additions.append(formatted)
             else:
-                soft_additions.append(formatted)
+                soft_additions.append(_soft("security", item, formatted))
 
         # Architecture violations → hard
         for item in findings.get("architecture_violations", []):
@@ -83,40 +118,49 @@ def _extract_brief_signals(
             name = item.get("name", "")
             file_ = item.get("file", "")
             confidence = item.get("confidence", "?")
-            soft_additions.append(
-                f"Dead code: {kind} '{name}' in {file_} (confidence {confidence}%)"
-            )
+            soft_additions.append(_soft(
+                "dead_code", item,
+                f"Dead code: {kind} '{name}' in {file_} (confidence {confidence}%)",
+            ))
 
         # API surface → soft
         for item in findings.get("api_surface", []):
             change_type = item.get("change_type", "")
             symbol = item.get("symbol", "")
             details = item.get("details", "")
-            soft_additions.append(f"API issue [{change_type}]: {symbol} — {details}")
+            soft_additions.append(_soft(
+                "api_surface", item, f"API issue [{change_type}]: {symbol} — {details}",
+            ))
 
         # Clones → soft
         for item in findings.get("clones", []):
             lines = item.get("lines", "?")
             file_a = item.get("file_a", "")
             file_b = item.get("file_b", "")
-            soft_additions.append(
-                f"Code clone: {lines} lines duplicated between {file_a} and {file_b}"
-            )
+            soft_additions.append(_soft(
+                "clones", item,
+                f"Code clone: {lines} lines duplicated between {file_a} and {file_b}",
+            ))
 
         # Type errors → soft
         for item in findings.get("type_errors", []):
             code = item.get("code", "")
             line = item.get("line", "?")
             message = item.get("message", "")
-            soft_additions.append(f"Type error [{code}] line {line}: {message}")
+            soft_additions.append(_soft(
+                "type_errors", item, f"Type error [{code}] line {line}: {message}",
+            ))
 
-        # Uncovered changes: dict[path → info] → soft
+        # Uncovered changes: dict[path → info] → soft. Identity is the path string, so
+        # the ID is built inline rather than through the dict-typed _normalized_finding.
         for path, info in findings.get("uncovered_changes", {}).items():
             basename = os.path.basename(path)
             missing = info.get("changed_lines_missing", "?")
-            soft_additions.append(
-                f"Uncovered changes in {basename}: {missing} changed lines have no tests"
-            )
+            find_id = finding_evidence_id({"kind": "uncovered_changes", "path": path})
+            soft_additions.append((
+                find_id,
+                f"Uncovered changes in {basename}: {missing} changed lines have no tests",
+            ))
 
     return hard_additions, soft_additions
 
@@ -255,12 +299,12 @@ class BriefBuilder:
                     score=score_by_id.get(sha, 0.0),
                 )
             )
-        for index, item in enumerate(soft_additions):
+        for find_id, text in soft_additions:
             soft_items.append(
                 SoftContextItem(
-                    item_id=f"finding:{index}",
+                    item_id=find_id,
                     category="finding",
-                    text=item,
+                    text=text,
                     score=0.0,
                 )
             )
