@@ -1,8 +1,10 @@
 # CHIPS Cortex — v1 Foundation Milestone
 
-**Date:** 2026-05-28  
+**Date:** 2026-05-28 (reconciled 2026-05-31)  
 **Branch:** `feat/evidence-hypothesis-primitives`  
-**Status:** Foundation shipped, staged batch pending review
+**Status:** Foundation shipped. Staged batch committed (`ab14476`). Phase 0 substrate +
+build-time constraint injection committed (`c79bd74`). See the **Reconciliation note**
+below for what actually landed vs. the original sequencing.
 
 ---
 
@@ -56,9 +58,13 @@ L5 is partially addressed in the staged batch (idempotency key is now optional, 
 
 ---
 
-## In-Flight: Staged Batch (pending commit)
+## Staged Batch — COMMITTED as `ab14476`
 
-The following is staged but not yet committed. It builds on the Gaps 1–5 foundation without reopening any of those gaps:
+> **Reconciliation note (2026-05-31):** this batch was committed as a single commit
+> `ab14476` ("feat: feedback, health, learning, idempotency — staged batch", ~1290 LOC,
+> 31 files). It bundles ~6 concerns that would ideally have been separate slices — recorded
+> as a process debt, not re-litigated. It builds on the Gaps 1–5 foundation without reopening
+> any of those gaps:
 
 **Feedback + health surface:**
 - `mcp/modules/feedback.py`, `mcp/modules/health.py` — new MCP modules
@@ -86,7 +92,7 @@ The following is staged but not yet committed. It builds on the Gaps 1–5 found
 
 Work should proceed in this order, treating each as an independent slice:
 
-### 1. Anti-regression constraint substrate (Phase 0 — pure layer)
+### 1. Anti-regression constraint substrate (Phase 0 — pure layer) — ✅ SHIPPED (`c79bd74`, migration 007)
 
 **What:** Durable `cortex_constraints` table as the policy store injected into `hard_constraints` at build time.
 
@@ -96,13 +102,20 @@ Work should proceed in this order, treating each as an independent slice:
 
 **Contract:** Locked in `27_05_phase1_evidence_hypotheses_contract.md §H`. Pure layer only — no builder wiring until Phase 1.
 
-### 2. MCP constraint tools (Phase 0 — wire)
+### 2. MCP constraint tools (Phase 0 — wire) — ❌ NOT YET BUILT (L9, D4)
+
+> The substrate (1) and build-time injection (3) shipped, but this add/retire surface did
+> not. Constraints currently enter `cortex_constraints` only via SQL/migration. This is the
+> highest-leverage gap: without it the Phase 1 write-back review queue has no sink.
 
 **What:** `get_constraints` tool registered on the MCP bus. Queried by scope, returns active constraints filtered by tenant. Enables Claude Code to inspect the current constraint set.
 
 **Scope:** `mcp/tools/constraints.py`, `mcp/modules/constraints.py`, bus registration, tests.
 
-### 3. Constraint injection at build time (Phase 1 — builder wiring)
+### 3. Constraint injection at build time (Phase 1 — builder wiring) — ✅ SHIPPED (`c79bd74`)
+
+> Note: this Phase-1 builder wiring landed **before** the §A finding-ID prerequisite (still
+> positional — L7, D2), inverting the contract's §I implementation order. Tracked as debt.
 
 **What:** `BriefBuilder.build()` loads active constraints via `ConstraintRepository`, passes them through `assemble_hard_constraints()` and `assemble_forbidden_edits()`, and stores `compression_trace` + `governor_decision` on the brief.
 
