@@ -25,6 +25,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.38.0",
     "opentelemetry-instrumentation-httpx>=0.59b0",
     "opentelemetry-instrumentation-psycopg>=0.59b0",
+    "duckdb>=1.4.2",
 ]
 
 [project.optional-dependencies]
