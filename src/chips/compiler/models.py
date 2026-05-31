@@ -59,6 +59,9 @@ class ContextBrief:
     forbidden_edits: list[str] = field(default_factory=list)
     allowed_edits: list[str] = field(default_factory=list)
     governor_decision: dict = field(default_factory=dict)
+    # Phase 1 (§B/§I.5): typed, stable-ID projection of this brief's signals. A
+    # re-derivable projection — not persisted to cortex_briefs (no §H column).
+    evidence_bundle: "EvidenceBundle | None" = None
 
 
 # ── Phase 1: evidence-ranked hypotheses ──────────────────────────────────────

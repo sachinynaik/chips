@@ -12,6 +12,7 @@ from chips.mcp.bus import (
     create_bus,
     main,  # noqa: F401
 )
+from chips.mcp.modules.brief import evidence_bundle_to_wire
 from chips.mcp.tools.health import get_source_health as _get_source_health
 
 app, _registry = create_bus()
@@ -54,6 +55,7 @@ def get_context_brief(
             }
             for k, v in brief.data_sources.items()
         },
+        "evidence_bundle": evidence_bundle_to_wire(brief.evidence_bundle),
     }
 
 

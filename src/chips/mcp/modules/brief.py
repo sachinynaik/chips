@@ -7,8 +7,37 @@ from mcp.server.fastmcp import FastMCP
 
 from chips.compiler.builder import BriefBuilder
 from chips.compiler.compressor import OllamaCompressor
+from chips.compiler.models import EvidenceBundle, EvidenceItem
 from chips.compiler.policy import PolicyLoader
 from chips.harvester.embedding import OllamaEmbedder
+
+
+def _evidence_item_to_wire(e: EvidenceItem) -> dict:
+    return {
+        "evidence_id": e.evidence_id,
+        "kind": e.kind,
+        "label": e.label,
+        "text": e.text,
+        "weight": e.weight,
+        "constraint_kind": e.constraint_kind,
+        "target": e.target,
+        "refs": e.refs,
+    }
+
+
+def evidence_bundle_to_wire(bundle: EvidenceBundle | None) -> dict | None:
+    """Serialize an EvidenceBundle for the MCP wire (UUID → str; lists of items).
+
+    Shared by ``BriefModule.get_context_brief`` and ``server.get_context_brief`` so the
+    two brief serializers cannot drift on the bundle shape (contract §I.5).
+    """
+    if bundle is None:
+        return None
+    return {
+        "bundle_id": str(bundle.bundle_id),
+        "constraints": [_evidence_item_to_wire(c) for c in bundle.constraints],
+        "evidence": [_evidence_item_to_wire(e) for e in bundle.evidence],
+    }
 
 
 class BriefModule:
@@ -79,6 +108,7 @@ class BriefModule:
             "retrieved_memories": brief.retrieved.memories,
             "forbidden_edits": brief.forbidden_edits,
             "allowed_edits": brief.allowed_edits,
+            "evidence_bundle": evidence_bundle_to_wire(brief.evidence_bundle),
         }
 
     def register(self, app: FastMCP) -> None:

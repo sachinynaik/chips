@@ -16,6 +16,7 @@ from chips.compiler.models import ContextBrief, RetrievedItems, SoftContextItem,
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.constraint_repository import ConstraintRepository
 from chips.compiler.evidence import finding_evidence_id
+from chips.compiler.evidence_bundle import assemble_evidence_bundle
 from chips.compiler.constraints import (
     assemble_forbidden_edits,
     assemble_hard_constraints,
@@ -342,6 +343,11 @@ class BriefBuilder:
         brief_id = uuid.uuid4()
         generated_at = datetime.now(timezone.utc)
 
+        # Phase 1 (§I.5): project the assembled constraints + soft items into a typed,
+        # stable-ID EvidenceBundle (bundle_id == brief_id). Findings already carry their
+        # find:<hash> IDs; constraints become the contradiction layer.
+        evidence_bundle = assemble_evidence_bundle(brief_id, learned, soft_items)
+
         brief = ContextBrief(
             brief_id=brief_id,
             task=task,
@@ -369,6 +375,7 @@ class BriefBuilder:
                 "skipped_sources": governor.skipped_sources,
                 "reason": governor.reason,
             },
+            evidence_bundle=evidence_bundle,
         )
 
         self._persist(brief)
