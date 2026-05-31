@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from chips.compiler.compressor import OllamaCompressor
 from chips.compiler.policy import PolicyLoader
 from chips.harvester.embedding import OllamaEmbedder
+from chips.observability.tracing import configure_telemetry
 
 
 @runtime_checkable
@@ -113,6 +114,7 @@ def create_bus(
 
 
 def main() -> None:
+    configure_telemetry("chips-cortex")
     app, _ = create_bus()
     app.run(transport="sse")
 

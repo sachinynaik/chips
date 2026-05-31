@@ -6,6 +6,8 @@ from collections import defaultdict
 
 import psycopg
 
+from chips.observability.metrics import observe_learning_recompute
+
 
 class BriefLearningService:
     _last_recompute_by_tenant: dict[str, float] = {}
@@ -30,6 +32,7 @@ class BriefLearningService:
         return updated
 
     def recompute(self, tenant_id: str | None = None) -> int:
+        start = time.monotonic()
         rows = self._fetch_learning_rows(tenant_id=tenant_id)
         aggregates: dict[str, dict[str, float | int]] = defaultdict(
             lambda: {
@@ -92,6 +95,9 @@ class BriefLearningService:
                 ),
             )
         self._conn.commit()
+        observe_learning_recompute(
+            status="success", duration_s=time.monotonic() - start
+        )
         return len(aggregates)
 
     def load_adjustments(self, tenant_id: str | None = None) -> dict[str, float]:

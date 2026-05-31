@@ -20,6 +20,11 @@ dependencies = [
     "tree-sitter-python>=0.25.0",
     "tree-sitter-javascript>=0.25.0",
     "tree-sitter-typescript>=0.23.2",
+    "prometheus-client>=0.23.1",
+    "opentelemetry-distro>=0.59b0",
+    "opentelemetry-exporter-otlp>=1.38.0",
+    "opentelemetry-instrumentation-httpx>=0.59b0",
+    "opentelemetry-instrumentation-psycopg>=0.59b0",
 ]
 
 [project.optional-dependencies]

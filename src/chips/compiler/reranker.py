@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from chips.compiler.models import RankedSignal, SoftContextItem
+from chips.observability.metrics import observe_rerank
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +57,13 @@ def rerank(
     for initial retrieval. Scores are merged: 0.7 × reranker_score + 0.3 × original_score.
     """
     if not items:
+        observe_rerank(status="skipped")
         return signals, items
 
     cfg = config or RerankerConfig()
     ranker = _get_ranker(cfg.model_name, cfg.cache_dir)
     if ranker is None:
+        observe_rerank(status="unavailable")
         return signals, items
 
     passages = [{"id": item.item_id, "text": item.text} for item in items]
@@ -69,11 +72,13 @@ def rerank(
         results = ranker.rerank(request)  # type: ignore[union-attr]
     except Exception as exc:
         logger.warning("flashrank rerank failed, keeping original order: %s", exc)
+        observe_rerank(status="error")
         return signals, items
 
     # Build score lookup: item_id → reranker score (normalised 0-1)
     raw_scores = {r["id"]: float(r["score"]) for r in results}
     if not raw_scores:
+        observe_rerank(status="empty")
         return signals, items
 
     max_score = max(raw_scores.values()) or 1.0
@@ -111,4 +116,5 @@ def rerank(
 
     reranked_items.sort(key=lambda i: (-i.score, i.item_id))
     updated_signals.sort(key=lambda s: s.score, reverse=True)
+    observe_rerank(status="success")
     return updated_signals, reranked_items

@@ -30,6 +30,11 @@ from chips.compiler.structural import retrieve_structural
 from chips.harvester.embedding import OllamaEmbedder
 from chips.mcp.tools.runtime import probe_runtime
 from chips.mcp.tools.workflow import probe_workflow
+from chips.observability.metrics import (
+    observe_brief_build,
+    observe_governor_decision,
+    observe_structural_retrieval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +223,7 @@ class BriefBuilder:
 
         # Governor: if memories are already high-confidence, skip secondary sources.
         governor = governor_evaluate(memories)
+        observe_governor_decision(triggered=governor.triggered)
 
         effective_files = files if files else []
         if governor.triggered:
@@ -247,8 +253,12 @@ class BriefBuilder:
         if effective_files and not governor.triggered:
             try:
                 structural_items = retrieve_structural(effective_files)
+                observe_structural_retrieval(status="success")
             except Exception as exc:
                 logger.warning("structural retrieval failed: %s", exc)
+                observe_structural_retrieval(status="error")
+        else:
+            observe_structural_retrieval(status="skipped")
 
         runtime_status = probe_runtime()
         if runtime_status.status == "error":
@@ -379,6 +389,7 @@ class BriefBuilder:
         )
 
         self._persist(brief)
+        observe_brief_build(status="success", latency_ms=latency_ms)
         return brief
 
     def _persist(self, brief: ContextBrief) -> None:

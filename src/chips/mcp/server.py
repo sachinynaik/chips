@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 # Re-export these into the server namespace so tests can patch them directly.
 from chips.compiler.builder import BriefBuilder  # noqa: F401
 from chips.compiler.learning import BriefLearningService
@@ -14,6 +16,8 @@ from chips.mcp.bus import (
 )
 from chips.mcp.modules.brief import evidence_bundle_to_wire
 from chips.mcp.tools.health import get_source_health as _get_source_health
+from chips.observability.metrics import observe_feedback_submission
+from chips.observability.tracing import start_span
 
 app, _registry = create_bus()
 
@@ -27,15 +31,21 @@ def get_context_brief(
     from chips.tenant import require_tenant
 
     require_tenant(tenant_id)
-    conn = _get_conn()
-    try:
-        embedder = _get_embedder()
-        builder = BriefBuilder(
-            conn, embedder, _get_compressor(), policy_loader=_get_policy_loader()
-        )
-        brief = builder.build(task, scope=scope, files=files, tenant_id=tenant_id)
-    finally:
-        conn.close()
+    with start_span(
+        "chips.mcp.get_context_brief",
+        scope=scope,
+        tenant_id=tenant_id,
+        files_count=len(files or []),
+    ):
+        conn = _get_conn()
+        try:
+            embedder = _get_embedder()
+            builder = BriefBuilder(
+                conn, embedder, _get_compressor(), policy_loader=_get_policy_loader()
+            )
+            brief = builder.build(task, scope=scope, files=files, tenant_id=tenant_id)
+        finally:
+            conn.close()
     return {
         "brief_id": str(brief.brief_id),
         "task": brief.task,
@@ -75,18 +85,30 @@ def submit_brief_feedback(
     from chips.tenant import require_tenant
 
     require_tenant(tenant_id)
-    conn = _get_conn()
-    try:
-        result = BriefOutcomeRepository(conn).record_with_ack(
-            UUID(brief_id),
-            outcome=outcome,  # type: ignore[arg-type]
-            note=note,
-            tenant_id=tenant_id,
-            idempotency_key=idempotency_key,
-        )
-        BriefLearningService(conn).maybe_recompute(tenant_id=tenant_id)
-    finally:
-        conn.close()
+    start = time.monotonic()
+    with start_span(
+        "chips.mcp.submit_brief_feedback",
+        outcome=outcome,
+        tenant_id=tenant_id,
+        idempotency_key_present=idempotency_key is not None,
+    ):
+        conn = _get_conn()
+        try:
+            result = BriefOutcomeRepository(conn).record_with_ack(
+                UUID(brief_id),
+                outcome=outcome,  # type: ignore[arg-type]
+                note=note,
+                tenant_id=tenant_id,
+                idempotency_key=idempotency_key,
+            )
+            BriefLearningService(conn).maybe_recompute(tenant_id=tenant_id)
+        finally:
+            conn.close()
+    observe_feedback_submission(
+        outcome=result.outcome,
+        deduplicated=result.deduplicated,
+        latency_ms=int((time.monotonic() - start) * 1000),
+    )
 
     return {
         "outcome_id": str(result.outcome_id),
