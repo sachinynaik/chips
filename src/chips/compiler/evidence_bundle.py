@@ -18,8 +18,9 @@ from chips.compiler.evidence import make_evidence_id
 from chips.compiler.models import Constraint, EvidenceBundle, EvidenceItem, SoftContextItem
 
 # SoftContextItem.category → EvidenceItem.kind for the citable kinds in v1.
-# 'file'/'generic' are intentionally absent: file signals become citable in A2a; the
-# §A contract has no 'file'/'generic' evidence kind.
+# 'file'/'generic' are intentionally absent: the §A contract has no 'file'/'generic'
+# EvidenceKind. File signals are injected into the brief body (A2a) so they inform
+# context, but they are not citable evidence and must not enter the bundle.
 _CATEGORY_KIND: dict[str, str] = {
     "memory": "memory",
     "diff": "diff",

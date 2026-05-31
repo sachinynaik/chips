@@ -322,6 +322,22 @@ class BriefBuilder:
                     score=score_by_id.get(sha, 0.0),
                 )
             )
+        # File signals (#2): retrieved + ranked above; inject so the paid cost reaches
+        # the brief body. category="file" is intentionally NOT a citable EvidenceKind, so
+        # assemble_evidence_bundle skips these — they inform context, not hypotheses.
+        for sig in file_signals:
+            file_path = sig["file_path"]
+            soft_items.append(
+                SoftContextItem(
+                    item_id=file_path,
+                    category="file",
+                    text=(
+                        f"File {file_path}: churn={sig.get('churn_score')}, "
+                        f"failures={sig.get('failure_count')}"
+                    ),
+                    score=score_by_id.get(file_path, 0.0),
+                )
+            )
         for find_id, text in soft_additions:
             soft_items.append(
                 SoftContextItem(
