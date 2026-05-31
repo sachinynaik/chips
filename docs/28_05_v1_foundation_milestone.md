@@ -1,10 +1,26 @@
 # CHIPS Cortex — v1 Foundation Milestone
 
 **Date:** 2026-05-28 (reconciled 2026-05-31)  
-**Branch:** `feat/evidence-hypothesis-primitives`  
+**Branch:** `slice/d2-finding-evidence-ids` (was `feat/evidence-hypothesis-primitives`)  
 **Status:** Foundation shipped. Staged batch committed (`ab14476`). Phase 0 substrate +
 build-time constraint injection committed (`c79bd74`). See the **Reconciliation note**
 below for what actually landed vs. the original sequencing.
+
+> **⚠️ Current-state reconciliation (2026-05-31, HEAD `3b0ed7f`).** A Codex review found this
+> milestone doc describing a state the code has outgrown. Corrected facts as of HEAD:
+> - **§A finding IDs are no longer positional.** Stable `find:<content-hash>` IDs shipped in
+>   `2e1231e` (`_soft()` → `finding_evidence_id`). The "still positional (L7/D2)" note in
+>   *Next Work Order §3* below is **obsolete** and corrected inline.
+> - **Learning/governor decoupling shipped** (`3b0ed7f`): `learning_adjustment` is a separate
+>   field that biases ranking only; the governor reads unbiased confidence. (Was Codex #3.)
+> - **EvidenceBundle is still NOT wired** into `build()` / `ContextBrief` / the MCP wire — the
+>   Phase 1 contract's first prerequisite is in progress (Codex #1b).
+> - Open Codex findings confirmed against HEAD: **#2** file signals ranked but never emitted as
+>   SoftContextItems; **#4** `weights_used`/`verification_reward` exist in migration 007 but not
+>   on `ContextBrief`/`_persist()`/MCP wire; **#5** structural keys symbols by bare name; **#6**
+>   reranker `top_n` unused + global cache + batch-relative scores; **#7** `retire()` always
+>   returns True; **#8** feedback recompute synchronous on the request path.
+> - **Authoritative plan + locked decisions:** `docs/31_05_codex_remediation_plan.md`.
 
 ---
 
@@ -114,8 +130,10 @@ Work should proceed in this order, treating each as an independent slice:
 
 ### 3. Constraint injection at build time (Phase 1 — builder wiring) — ✅ SHIPPED (`c79bd74`)
 
-> Note: this Phase-1 builder wiring landed **before** the §A finding-ID prerequisite (still
-> positional — L7, D2), inverting the contract's §I implementation order. Tracked as debt.
+> Note: this Phase-1 builder wiring landed **before** the §A finding-ID prerequisite, inverting
+> the contract's §I implementation order. The §A prerequisite has since been satisfied — stable
+> `find:<content-hash>` IDs shipped in `2e1231e` (L7/D2 closed). EvidenceBundle wiring (§I next
+> step) is still pending — see `docs/31_05_codex_remediation_plan.md` Slice A1.
 
 **What:** `BriefBuilder.build()` loads active constraints via `ConstraintRepository`, passes them through `assemble_hard_constraints()` and `assemble_forbidden_edits()`, and stores `compression_trace` + `governor_decision` on the brief.
 
