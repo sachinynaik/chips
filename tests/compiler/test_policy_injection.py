@@ -16,6 +16,7 @@ def _make_embedder() -> MagicMock:
 def _make_compressor() -> MagicMock:
     m = MagicMock()
     m.compress.return_value = "compressed"
+    m.compress_with_trace.return_value = ("compressed", [])
     return m
 
 
@@ -92,6 +93,6 @@ def test_forbidden_items_passed_to_compressor_as_hard_constraints(conn):
         policy_loader=_loader_with(yaml_text),
     )
     builder.build("fix auth", scope="auth")
-    call_args = compressor.compress.call_args
+    call_args = compressor.compress_with_trace.call_args
     hard = call_args[0][0]
     assert "No plaintext passwords" in hard

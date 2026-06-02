@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import uuid4
 
 import duckdb
@@ -9,8 +8,8 @@ import duckdb
 from chips.analytics.duckdb_export import export_brief_history
 
 
-def test_export_brief_history_writes_rows():
-    db_path = Path("C:/tmp") / f"brief_history_{uuid4().hex}.duckdb"
+def test_export_brief_history_writes_rows(tmp_path):
+    db_path = tmp_path / f"brief_history_{uuid4().hex}.duckdb"
     rows = [
         {
             "brief_id": "b1",
