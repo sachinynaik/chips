@@ -26,6 +26,8 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.59b0",
     "opentelemetry-instrumentation-psycopg>=0.59b0",
     "duckdb>=1.4.2",
+    "vulture>=2.16",
+    "griffe>=2.0.2",
 ]
 
 [project.optional-dependencies]
