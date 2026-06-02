@@ -1,0 +1,82 @@
+# Two-pass CI (see wsl-docker-setup/docs/2-local-ci.md):
+#  - LOCAL  first pass: the pre-push git hook runs this via `act`/`actgpu` before every push.
+#  - REMOTE second pass: GitHub dispatches it to the self-hosted runner [self-hosted, gpu].
+# Make it a merge gate: repo Settings -> Branches -> require the `build` check.
+#
+# Faithful env via `uv sync` (uv.lock). Postgres provided as a service container;
+# the DB host differs between act (job runs in a container -> service name `postgres`)
+# and the self-hosted runner (-> localhost), so we resolve it at runtime.
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: [self-hosted, gpu]   # under act -> catthehacker/ubuntu:act-latest (~/.actrc)
+    env:
+      # Force POSIX temp dir — act-on-Windows can leak a Windows TEMP into the Linux job.
+      TMPDIR: /tmp
+      TEMP: /tmp
+      TMP: /tmp
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Sync locked deps (faithful env)
+        run: uv sync --extra dev
+
+      - name: Resolve reachable Postgres host
+        run: |
+          python3 - <<'PY'
+          import os, socket
+          for host in ("postgres", "localhost", "127.0.0.1"):
+              try:
+                  socket.create_connection((host, 5432), timeout=3).close()
+              except OSError:
+                  continue
+              url = f"postgresql://postgres:postgres@{host}:5432/postgres"
+              with open(os.environ["GITHUB_ENV"], "a") as fh:
+                  fh.write(f"CHIPS_TEST_DB_URL={url}\n")
+              print("Postgres reachable at", host)
+              break
+          else:
+              raise SystemExit("no Postgres service reachable on :5432")
+          PY
+
+      - name: Migrate test DB to head
+        # Some test dirs (tests/unit, tests/compiler) no-op the autouse apply_migrations
+        # fixture (mock tests), but their tests still open a real conn. Migrate the shared
+        # CI DB once up-front so those tables exist regardless of per-dir overrides.
+        run: |
+          uv run python - <<'PY'
+          import os
+          from alembic.config import Config
+          from alembic import command
+          cfg = Config("alembic.ini")
+          url = os.environ["CHIPS_TEST_DB_URL"].replace("postgresql://", "postgresql+psycopg://", 1)
+          cfg.set_main_option("sqlalchemy.url", url)
+          command.upgrade(cfg, "head")
+          print("migrated to head")
+          PY
+
+      - name: Run tests
+        run: uv run pytest -q
