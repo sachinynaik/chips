@@ -166,3 +166,30 @@ class Constraint:
     target: dict = field(default_factory=dict)
     status: str = "active"
     created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class DecisionLogEntry:
+    """A cortex_decision_log row: one policy decision per brief (Foundation).
+
+    Foundation captures context/action/propensity/policy_version/evidence/latency
+    with a versioned feature schema. The reward-consuming fields (feedback,
+    verifier_outcome, downstream_success, composite_reward) stay None until the
+    Activation phase (Phase-3 verifier). Governed by docs/02_06_execution_ledger.md.
+    """
+    id: UUID
+    brief_id: UUID
+    feature_schema_version: str
+    policy_version: str
+    tenant_id: str | None = None
+    scope: str | None = None
+    context_features: dict = field(default_factory=dict)
+    action: dict = field(default_factory=dict)
+    propensity: float | None = None
+    evidence_used: list = field(default_factory=list)
+    latency_ms: int | None = None
+    feedback: dict | None = None
+    verifier_outcome: dict | None = None
+    downstream_success: dict | None = None
+    composite_reward: float | None = None
+    created_at: datetime | None = None
