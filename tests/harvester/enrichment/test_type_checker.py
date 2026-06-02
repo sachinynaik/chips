@@ -96,3 +96,20 @@ def test_analyze_returns_empty_when_backend_not_installed():
         result = tc.analyze(["src/auth/token.py"])
     assert result["errors"] == []
     assert result["coverage"] == {}
+
+
+# ── Status passthrough ────────────────────────────────────────────────────────
+
+def test_status_passed_through_from_backend_ok():
+    tc = _tc(backend="pyrefly")
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = _mock_subprocess()
+        result = tc.analyze(["src/auth/token.py"])
+    assert result["status"] == "ok"
+
+
+def test_status_passed_through_from_backend_not_installed():
+    tc = _tc(backend="pyrefly")
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        result = tc.analyze(["src/auth/token.py"])
+    assert result["status"] == "not_installed"

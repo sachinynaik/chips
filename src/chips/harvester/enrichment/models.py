@@ -1,5 +1,23 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from enum import Enum
+
+
+class AnalyzerStatus(str, Enum):
+    """Outcome of a single enrichment analyzer run.
+
+    CHIPS principle "Evidence > Guessing": a tool that did not run (not
+    installed, crashed, timed out) must NOT read as "no findings = clean".
+    Consumers can branch on this to distinguish a genuine clean result
+    (``ok``) from a non-result.
+    """
+
+    OK = "ok"
+    NOT_INSTALLED = "not_installed"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    SKIPPED = "skipped"
+
 
 @dataclass
 class EnrichmentResult:
@@ -38,3 +56,7 @@ class EnrichmentResult:
     # DB
     scope_memories: list[dict] = field(default_factory=list)
     cochange_pairs: list[dict] = field(default_factory=list)
+    # Per-analyzer run status (AnalyzerStatus values keyed by analyzer name).
+    # Empty for analyzers that did not run or were not wired. Lets consumers
+    # tell a genuine clean result (status "ok") from a non-result.
+    analyzer_status: dict[str, str] = field(default_factory=dict)

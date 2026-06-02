@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from chips.harvester.enrichment.pyrefly import PyreflyAnalyzer
@@ -183,3 +184,62 @@ def test_no_config_path_omits_config_flag():
         _analyzer().analyze(["src/auth/token.py"])
     check_cmd = mock_run.call_args_list[0][0][0]
     assert "--config" not in check_cmd
+
+
+# ── Status reporting (Evidence > Guessing) ────────────────────────────────────
+
+def test_status_key_present_for_no_files():
+    result = _analyzer().analyze([])
+    assert result["status"] == "skipped"
+
+
+def test_status_ok_on_clean_run():
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [_errors_response([]), _coverage_response()]
+        result = _analyzer().analyze(["src/clean.py"])
+    assert result["status"] == "ok"
+    assert result["errors"] == []
+
+
+def test_status_ok_when_errors_found():
+    # exit 1 = pyrefly ran and found type errors. Still "ok" (it ran).
+    errors = [{"code": "bad-return-type", "message": "m", "path": "a.py",
+               "range": {"start": {"line": 1}}}]
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [_errors_response(errors), _coverage_response()]
+        result = _analyzer().analyze(["a.py"])
+    assert result["status"] == "ok"
+    assert len(result["errors"]) == 1
+
+
+def test_status_not_installed_on_file_not_found():
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        result = _analyzer().analyze(["src/auth/token.py"])
+    assert result["status"] == "not_installed"
+    assert result["errors"] == []
+    assert result["coverage"] == {}
+
+
+def test_status_timed_out_on_timeout_expired():
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="pyrefly", timeout=60)):
+        result = _analyzer().analyze(["src/auth/token.py"])
+    assert result["status"] == "timed_out"
+    assert result["errors"] == []
+
+
+def test_status_failed_on_bad_returncode():
+    # A returncode pyrefly never uses for a normal run (not 0/1) = crash.
+    crashed = MagicMock(returncode=2, stdout="")
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [crashed, _coverage_response()]
+        result = _analyzer().analyze(["src/auth/token.py"])
+    assert result["status"] == "failed"
+
+
+def test_status_failed_on_invalid_json():
+    bad = MagicMock(returncode=1, stdout="not json output")
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [bad, _coverage_response()]
+        result = _analyzer().analyze(["src/auth/token.py"])
+    assert result["status"] == "failed"
+    assert result["errors"] == []

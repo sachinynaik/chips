@@ -222,3 +222,44 @@ def test_file_field_matches_input_path(tmp_path):
     result = GriffeAnalyzer().analyze([py_file])
     for r in result:
         assert r["file"] == py_file
+
+
+# ---------------------------------------------------------------------------
+# Run status (Evidence > Guessing)
+# ---------------------------------------------------------------------------
+
+def test_last_status_defaults_to_skipped_before_run():
+    assert GriffeAnalyzer().last_status == "skipped"
+
+
+def test_last_status_ok_after_real_run(tmp_path):
+    code = "def public_func(x):\n    pass\n"
+    py_file = _write(tmp_path, "mod.py", code)
+    analyzer = GriffeAnalyzer()
+    analyzer.analyze([py_file])
+    assert analyzer.last_status == "ok"
+
+
+def test_last_status_skipped_when_no_py_files():
+    analyzer = GriffeAnalyzer()
+    analyzer.analyze(["foo.ts", "bar.go"])
+    assert analyzer.last_status == "skipped"
+
+
+def test_last_status_not_installed_when_griffe_absent(tmp_path):
+    code = "def func(x):\n    pass\n"
+    py_file = _write(tmp_path, "mod.py", code)
+    analyzer = GriffeAnalyzer()
+    with patch.dict(sys.modules, {"griffe": None}):
+        analyzer.analyze([py_file])
+    assert analyzer.last_status == "not_installed"
+
+
+def test_last_status_failed_on_per_file_error(tmp_path):
+    code = "def public_func(x):\n    pass\n"
+    py_file = _write(tmp_path, "mod.py", code)
+    analyzer = GriffeAnalyzer()
+    with patch("griffe.visit", side_effect=RuntimeError("boom")):
+        result = analyzer.analyze([py_file])
+    assert analyzer.last_status == "failed"
+    assert result == []

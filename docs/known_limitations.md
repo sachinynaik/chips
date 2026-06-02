@@ -141,16 +141,40 @@ invariant ("constraints created only via `cortex_add_constraint`, human-confirme
 
 ---
 
-## L10 — Harvester enrichment tests assume undeclared optional analyzers
+## L10 — Harvester enrichment tests assume undeclared optional analyzers — ✅ RESOLVED
+
+> **Resolved.** `vulture` and `griffe` are now declared dependencies (commit `831b6af`), and
+> `pyrefly` is declared as well (enrichment-reliability slice, `slice/enrich-reliability`). All
+> three are installed via `uv sync`, so the detector tests no longer depend on ambient tooling.
+> Original report below.
 
 **Location:** `tests/harvester/enrichment/test_dead_code.py`, `test_api_surface.py`  
-**Behavior:** The detectors degrade gracefully (`dead_code.py` returns `[]` when `vulture` is
-absent; `api_surface.py` needs `griffe`), but `vulture` and `griffe` are **not declared** in
-`pyproject.toml` / `uv.lock`. With the tools absent the detectors return nothing and 10 tests
-fail (`assert 'unused_a' in set()`). Pre-existing on master (detector sources untouched since
-`6eef2e9`); independent of this branch.  
-**When it becomes a defect:** CI green-ness depends on whichever environment happens to have the
-tools installed.  
-**Follow-up:** Separate test-hygiene slice off master — `pytest.skip` when the optional tool is
-absent (matches the detectors' own graceful-degradation contract), or declare the deps. Not
-fixed on this branch (off-topic).
+**Behavior (original):** The detectors degrade gracefully (`dead_code.py` returns `[]` when
+`vulture` is absent; `api_surface.py` needs `griffe`), but `vulture` and `griffe` were **not
+declared** in `pyproject.toml` / `uv.lock`. With the tools absent the detectors returned nothing
+and 10 tests failed (`assert 'unused_a' in set()`).  
+**Follow-up done:** declared the deps; additionally, the enrichment-reliability slice replaced
+the silent empty-on-failure behaviour with an explicit `AnalyzerStatus` (`ok` / `not_installed`
+/ `failed` / `timed_out` / `skipped`). `dead_code` / `api_surface` expose a `last_status`
+property; `pyrefly`/`type_checker` add a `status` key to their result dict; the pipeline
+surfaces all of these via `EnrichmentResult.analyzer_status`. A genuine clean run (`ok`,
+findings empty) is now distinguishable from a non-result, upholding "Evidence > Guessing".
+
+---
+
+## L11 — Several enrichment analyzers still swallow failures (deferred)
+
+**Location:** `src/chips/harvester/enrichment/` — `semgrep.py`, `security.py` (bandit),
+`architecture.py` (import-linter), `clones.py` (jscpd), `complexity.py` (lizard), `joern.py`.  
+**Behavior:** These analyzers were **not** touched by the enrichment-reliability slice and still
+return empty on failure, so "tool not installed / crashed / timed out" can read as a false-clean
+"no findings". Note that `jscpd` (Node) and `joern` (JVM) are legitimately optional — they are
+not Python deps and are expected to be absent in many environments. Where they have already been
+migrated to the status contract (pyrefly/type_checker, vulture/griffe), a missing tool now
+surfaces as `not_installed` rather than a false-clean.  
+**When it becomes a defect:** Any consumer that treats an empty findings list from these
+analyzers as evidence of cleanliness, when in fact the analyzer never ran.  
+**Follow-up:** Extend the `AnalyzerStatus` contract (a `status` key for dict-returning analyzers,
+a `last_status` accessor for list-returning ones) to semgrep / bandit / import-linter / clones /
+complexity / joern, and surface them through `EnrichmentResult.analyzer_status` in `pipeline.py`.
+Deferred follow-up slice.

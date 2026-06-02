@@ -262,6 +262,44 @@ def test_handles_empty_py_file(tmp_path):
     assert result == []
 
 
+def test_last_status_defaults_to_skipped_before_run():
+    assert VultureAnalyzer().last_status == "skipped"
+
+
+def test_last_status_ok_after_real_run(tmp_path):
+    code = "def used():\n    return 1\n\nx = used()\n"
+    py_file = _write(tmp_path, "mod.py", code)
+    analyzer = VultureAnalyzer()
+    analyzer.analyze([py_file])
+    assert analyzer.last_status == "ok"
+
+
+def test_last_status_skipped_when_no_py_files():
+    analyzer = VultureAnalyzer()
+    analyzer.analyze(["foo.ts", "bar.go"])
+    assert analyzer.last_status == "skipped"
+
+
+def test_last_status_not_installed_when_vulture_absent(tmp_path):
+    code = "def unused_func():\n    pass\n"
+    py_file = _write(tmp_path, "mod.py", code)
+    analyzer = VultureAnalyzer()
+    with patch.dict(sys.modules, {"vulture": None}):
+        analyzer.analyze([py_file])
+    assert analyzer.last_status == "not_installed"
+
+
+def test_last_status_failed_on_per_file_error(tmp_path):
+    code = "def used():\n    return 1\n\nx = used()\n"
+    py_file = _write(tmp_path, "mod.py", code)
+    analyzer = VultureAnalyzer()
+    with patch("vulture.Vulture", side_effect=RuntimeError("boom")):
+        result = analyzer.analyze([py_file])
+    # The error is surfaced via status, not swallowed into a false-clean.
+    assert analyzer.last_status == "failed"
+    assert result == []
+
+
 def test_multiple_files_processed_in_one_call(tmp_path):
     code_a = (
         "def used_a():\n"

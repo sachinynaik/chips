@@ -28,6 +28,7 @@ dependencies = [
     "duckdb>=1.4.2",
     "vulture>=2.16",
     "griffe>=2.0.2",
+    "pyrefly>=1.0.0",
 ]
 
 [project.optional-dependencies]

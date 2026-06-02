@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from chips.harvester.enrichment.models import EnrichmentResult
+from chips.harvester.enrichment.models import AnalyzerStatus, EnrichmentResult
 from chips.harvester.enrichment.api_surface import GriffeAnalyzer
 from chips.harvester.enrichment.architecture import ImportLinterAnalyzer
 from chips.harvester.enrichment.clones import JscpdAnalyzer
@@ -74,6 +74,8 @@ class EnrichmentPipeline:
         complexity_metrics = self._complexity.analyze(commit.files_changed)
         semgrep_findings = self._semgrep.analyze(commit.files_changed)
 
+        analyzer_status: dict[str, str] = {}
+
         type_errors: list[dict] = []
         type_coverage: dict = {}
         type_checker_backend = "none"
@@ -82,14 +84,23 @@ class EnrichmentPipeline:
             type_errors = tc_result.get("errors", [])
             type_coverage = tc_result.get("coverage", {})
             type_checker_backend = tc_result.get("backend", self._type_checker.backend)
+            analyzer_status["type_checker"] = tc_result.get(
+                "status", AnalyzerStatus.OK.value
+            )
 
         api_surface_findings: list[dict] = []
         if self._api_surface is not None:
             api_surface_findings = self._api_surface.analyze(commit.files_changed)
+            analyzer_status["api_surface"] = getattr(
+                self._api_surface, "last_status", AnalyzerStatus.OK.value
+            )
 
         dead_code_findings: list[dict] = []
         if self._dead_code is not None:
             dead_code_findings = self._dead_code.analyze(commit.files_changed)
+            analyzer_status["dead_code"] = getattr(
+                self._dead_code, "last_status", AnalyzerStatus.OK.value
+            )
 
         security_findings: list[dict] = []
         if self._security is not None:
@@ -159,4 +170,5 @@ class EnrichmentPipeline:
             defect_risk=defect_risk,
             scope_memories=scope_memories,
             cochange_pairs=cochange_pairs,
+            analyzer_status=analyzer_status,
         )

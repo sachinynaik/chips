@@ -153,3 +153,45 @@ def test_pipeline_backend_recorded_in_result():
     pipeline._type_checker = tc
     result = pipeline.enrich(_commit(), "auth")
     assert result.type_checker_backend == "pyrefly"
+
+
+# ── analyzer_status wiring (Evidence > Guessing) ──────────────────────────────
+
+def test_pipeline_analyzer_status_empty_when_no_analyzers():
+    result = _pipeline().enrich(_commit(), "auth")
+    assert result.analyzer_status == {}
+
+
+def test_pipeline_records_type_checker_status():
+    from chips.harvester.enrichment.type_checker import TypeCheckerAnalyzer
+    tc = MagicMock(spec=TypeCheckerAnalyzer)
+    tc.backend = "pyrefly"
+    tc.analyze.return_value = {
+        "errors": [], "coverage": {}, "backend": "pyrefly", "status": "not_installed",
+    }
+    pipeline = _pipeline()
+    pipeline._type_checker = tc
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["type_checker"] == "not_installed"
+
+
+def test_pipeline_records_dead_code_status():
+    from chips.harvester.enrichment.dead_code import VultureAnalyzer
+    dc = MagicMock(spec=VultureAnalyzer)
+    dc.analyze.return_value = []
+    dc.last_status = "ok"
+    pipeline = _pipeline()
+    pipeline._dead_code = dc
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["dead_code"] == "ok"
+
+
+def test_pipeline_records_api_surface_status():
+    from chips.harvester.enrichment.api_surface import GriffeAnalyzer
+    api = MagicMock(spec=GriffeAnalyzer)
+    api.analyze.return_value = []
+    api.last_status = "failed"
+    pipeline = _pipeline()
+    pipeline._api_surface = api
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["api_surface"] == "failed"
