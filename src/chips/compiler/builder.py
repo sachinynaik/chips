@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import psycopg
@@ -206,6 +207,17 @@ def _extract_brief_signals(
     return hard_additions, soft_additions
 
 
+@dataclass
+class _Retrieval:
+    """Outputs of the retrieval phase (the RETRIEVER span block)."""
+    memories: list[dict]
+    file_signals: list[dict]
+    file_signals_status: SourceStatus
+    diffs: list[dict]
+    structural_items: list[dict]
+    governor: GovernorDecision
+
+
 class BriefBuilder:
     def __init__(
         self,
@@ -240,63 +252,13 @@ class BriefBuilder:
 
             embedding = self._embed(task)
 
-            learning = BriefLearningService(self._conn)
-            adjustments = learning.load_adjustments(tenant_id=tenant_id)
-
-            with start_span("chips.retrieve", kind=SpanKind.RETRIEVER) as retrieve_span:
-                memories = retrieve_memories(
-                    self._conn, embedding, scope=scope, tenant_id=tenant_id
-                )
-                _apply_learning_adjustments(memories, adjustments)
-
-                # Governor: if memories are already high-confidence, skip secondary sources.
-                governor = governor_evaluate(memories)
-                observe_governor_decision(triggered=governor.triggered)
-
-                effective_files = files if files else []
-                if governor.triggered:
-                    file_signals = []
-                    file_signals_status = SourceStatus(
-                        status="not_configured",
-                        detail=f"governor short-circuit: {governor.reason}",
-                    )
-                    diffs = []
-                else:
-                    file_signals = retrieve_file_signals(
-                        self._conn, effective_files, tenant_id=tenant_id
-                    )
-                    if not effective_files:
-                        file_signals_status = SourceStatus(
-                            status="not_configured", detail="no files provided to build()"
-                        )
-                    elif file_signals:
-                        file_signals_status = SourceStatus(status="available")
-                    else:
-                        file_signals_status = SourceStatus(status="unavailable")
-
-                    diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
-
-                # Structural retrieval: AST call-graph walk over provided files.
-                structural_items: list[dict] = []
-                if effective_files and not governor.triggered:
-                    try:
-                        structural_items = retrieve_structural(effective_files)
-                        observe_structural_retrieval(status="success")
-                    except Exception as exc:
-                        logger.warning("structural retrieval failed: %s", exc)
-                        observe_structural_retrieval(status="error")
-                else:
-                    observe_structural_retrieval(status="skipped")
-
-                if retrieve_span is not None:
-                    retrieve_span.set_attribute(ATTR_RETRIEVER_MEMORY_COUNT, len(memories))
-                    retrieve_span.set_attribute(ATTR_RETRIEVER_DIFF_COUNT, len(diffs))
-                    retrieve_span.set_attribute(
-                        ATTR_RETRIEVER_FILE_SIGNAL_COUNT, len(file_signals)
-                    )
-                    retrieve_span.set_attribute(
-                        ATTR_RETRIEVER_STRUCTURAL_COUNT, len(structural_items)
-                    )
+            retrieval = self._retrieve(embedding, scope, files, tenant_id)
+            memories = retrieval.memories
+            file_signals = retrieval.file_signals
+            file_signals_status = retrieval.file_signals_status
+            diffs = retrieval.diffs
+            structural_items = retrieval.structural_items
+            governor = retrieval.governor
 
             runtime_status = probe_runtime()
             if runtime_status.status == "error":
@@ -476,6 +438,80 @@ class BriefBuilder:
             if embed_span is not None:
                 embed_span.set_attribute(ATTR_EMBEDDING_DIMENSIONS, len(embedding))
         return embedding
+
+    def _retrieve(
+        self,
+        embedding: list[float],
+        scope: str | None,
+        files: list[str] | None,
+        tenant_id: str | None,
+    ) -> _Retrieval:
+        learning = BriefLearningService(self._conn)
+        adjustments = learning.load_adjustments(tenant_id=tenant_id)
+
+        with start_span("chips.retrieve", kind=SpanKind.RETRIEVER) as retrieve_span:
+            memories = retrieve_memories(
+                self._conn, embedding, scope=scope, tenant_id=tenant_id
+            )
+            _apply_learning_adjustments(memories, adjustments)
+
+            # Governor: if memories are already high-confidence, skip secondary sources.
+            governor = governor_evaluate(memories)
+            observe_governor_decision(triggered=governor.triggered)
+
+            effective_files = files if files else []
+            if governor.triggered:
+                file_signals = []
+                file_signals_status = SourceStatus(
+                    status="not_configured",
+                    detail=f"governor short-circuit: {governor.reason}",
+                )
+                diffs = []
+            else:
+                file_signals = retrieve_file_signals(
+                    self._conn, effective_files, tenant_id=tenant_id
+                )
+                if not effective_files:
+                    file_signals_status = SourceStatus(
+                        status="not_configured", detail="no files provided to build()"
+                    )
+                elif file_signals:
+                    file_signals_status = SourceStatus(status="available")
+                else:
+                    file_signals_status = SourceStatus(status="unavailable")
+
+                diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
+
+            # Structural retrieval: AST call-graph walk over provided files.
+            structural_items: list[dict] = []
+            if effective_files and not governor.triggered:
+                try:
+                    structural_items = retrieve_structural(effective_files)
+                    observe_structural_retrieval(status="success")
+                except Exception as exc:
+                    logger.warning("structural retrieval failed: %s", exc)
+                    observe_structural_retrieval(status="error")
+            else:
+                observe_structural_retrieval(status="skipped")
+
+            if retrieve_span is not None:
+                retrieve_span.set_attribute(ATTR_RETRIEVER_MEMORY_COUNT, len(memories))
+                retrieve_span.set_attribute(ATTR_RETRIEVER_DIFF_COUNT, len(diffs))
+                retrieve_span.set_attribute(
+                    ATTR_RETRIEVER_FILE_SIGNAL_COUNT, len(file_signals)
+                )
+                retrieve_span.set_attribute(
+                    ATTR_RETRIEVER_STRUCTURAL_COUNT, len(structural_items)
+                )
+
+        return _Retrieval(
+            memories=memories,
+            file_signals=file_signals,
+            file_signals_status=file_signals_status,
+            diffs=diffs,
+            structural_items=structural_items,
+            governor=governor,
+        )
 
     def _rerank(
         self, task: str, ranked: list, soft_items: list[SoftContextItem]
