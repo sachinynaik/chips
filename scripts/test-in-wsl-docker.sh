@@ -39,6 +39,7 @@ docker run --rm --network host \
   -v chips-uv-cache:/root/.cache/uv \
   -e CHIPS_TEST_DB_URL="${DBURL}" \
   -e TMPDIR=/tmp \
+  -e CHIPS_REQUIRE_OTEL=1 \
   python:3.13-bookworm bash -euc '
 pip install -q uv
 uv sync --extra dev

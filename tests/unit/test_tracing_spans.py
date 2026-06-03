@@ -24,13 +24,45 @@ def captured_spans(monkeypatch):
     """In-memory span capture, isolated from the process-global provider.
 
     Injects a fresh ``TracerProvider`` via the ``_get_tracer`` seam so each
-    test sees only its own spans (no set-once-guard contention).
+    test sees only its own spans (no set-once-guard contention), and enables the
+    telemetry gate (``start_span`` now also gates on ``_telemetry_requested``).
     """
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(tracing, "_get_tracer", lambda: provider.get_tracer("chips"))
+    monkeypatch.setattr(tracing, "_telemetry_requested", lambda: True)
     return exporter
+
+
+def test_start_span_is_disabled_when_telemetry_not_requested(monkeypatch):
+    # Provider injected, but telemetry off → start_span must not create a span.
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(tracing, "_get_tracer", lambda: provider.get_tracer("chips"))
+    monkeypatch.setattr(tracing, "_telemetry_requested", lambda: False)
+
+    from chips.observability.openinference import SpanKind
+
+    with tracing.start_span("chips.retrieve", kind=SpanKind.RETRIEVER) as span:
+        assert span is None
+
+    assert exporter.get_finished_spans() == ()
+
+
+def test_span_records_exception_and_sets_error_status(captured_spans):
+    from opentelemetry.trace import StatusCode
+
+    from chips.observability.openinference import SpanKind
+
+    with pytest.raises(ValueError):
+        with tracing.start_span("chips.boom", kind=SpanKind.TOOL):
+            raise ValueError("boom")
+
+    span = captured_spans.get_finished_spans()[0]
+    assert span.status.status_code == StatusCode.ERROR
+    assert any(event.name == "exception" for event in span.events)
 
 
 def test_start_span_stamps_openinference_kind(captured_spans):

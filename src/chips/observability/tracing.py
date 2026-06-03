@@ -35,9 +35,19 @@ def _telemetry_requested() -> bool:
     )
 
 
+def _telemetry_enabled() -> bool:
+    """Single gate shared by config and emission.
+
+    ``start_span`` consults this too (not just ``_OTEL_AVAILABLE``) so the
+    ``CHIPS_ENABLE_OTEL`` off-switch actually stops span *creation*, not only
+    exporter wiring — config and emission can no longer disagree.
+    """
+    return _OTEL_AVAILABLE and _telemetry_requested()
+
+
 def configure_telemetry(service_name: str = "chips-cortex") -> bool:
     global _CONFIGURED, _HTTPX_INSTRUMENTED, _PSYCOPG_INSTRUMENTED
-    if not _OTEL_AVAILABLE or not _telemetry_requested():
+    if not _telemetry_enabled():
         return False
 
     if not _CONFIGURED:
@@ -80,7 +90,7 @@ def _get_tracer():
 def start_span(
     name: str, kind: str | None = None, **attributes: object
 ) -> Iterator[object | None]:
-    if not _OTEL_AVAILABLE:
+    if not _telemetry_enabled():
         yield None
         return
 

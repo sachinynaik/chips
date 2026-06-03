@@ -19,6 +19,9 @@ jobs:
       TMPDIR: /tmp
       TEMP: /tmp
       TMP: /tmp
+      # Faithful env ships the full OTel stack, so the span contract tests must
+      # NOT skip here — test_otel_required.py turns any dep drift into a red CI.
+      CHIPS_REQUIRE_OTEL: "1"
     services:
       postgres:
         image: pgvector/pgvector:pg16

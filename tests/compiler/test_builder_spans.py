@@ -8,7 +8,7 @@ contract that replaces a review-gate checklist (observability design §decision)
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -35,12 +35,22 @@ from chips.observability.openinference import (
     ATTR_EMBEDDING_DIMENSIONS,
     ATTR_GOVERNOR_TRIGGERED,
     ATTR_LATENCY_MS,
+    ATTR_RETRIEVER_DIFF_COUNT,
+    ATTR_RETRIEVER_FILE_SIGNAL_COUNT,
     ATTR_SCOPE,
     ATTR_TASK_KIND,
     ATTR_TENANT_ID,
     SPAN_KIND_KEY,
     SpanKind,
 )
+
+_REQUIRED_SPANS = {
+    "chips.compile.brief",
+    "chips.embed.task",
+    "chips.retrieve",
+    "chips.rerank",
+    "chips.compress",
+}
 
 _TENANT = "aaaaaaaa-0000-0000-0000-000000000001"
 
@@ -64,6 +74,7 @@ def captured_spans(monkeypatch):
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(tracing, "_get_tracer", lambda: provider.get_tracer("chips"))
+    monkeypatch.setattr(tracing, "_telemetry_requested", lambda: True)
     return exporter
 
 
@@ -80,14 +91,9 @@ def test_build_emits_expected_span_tree(conn, captured_spans):
     spans = captured_spans.get_finished_spans()
     names = _by_name(spans)
 
-    # Exactly the five contracted spans — no more, no fewer.
-    assert set(names) == {
-        "chips.compile.brief",
-        "chips.embed.task",
-        "chips.retrieve",
-        "chips.rerank",
-        "chips.compress",
-    }
+    # Required spans present (parenting asserted separately). Not an exact-set
+    # lock: a future legitimate callee span must not break this contract.
+    assert _REQUIRED_SPANS <= set(names)
 
     # Span kinds.
     assert names["chips.compile.brief"].attributes[SPAN_KIND_KEY] == SpanKind.CHAIN
@@ -139,3 +145,27 @@ def test_optional_attributes_omitted_when_absent(conn, captured_spans):
     root = _by_name(captured_spans.get_finished_spans())["chips.compile.brief"]
     assert ATTR_SCOPE not in root.attributes
     assert ATTR_TENANT_ID not in root.attributes
+
+
+def test_span_tree_is_stable_under_governor_short_circuit(conn, captured_spans):
+    # When the governor short-circuits, secondary sources are skipped — but the
+    # span tree shape must be identical (deterministic contract), with the skip
+    # reflected on the root and zeroed retriever counts.
+    gov = MagicMock()
+    gov.triggered = True
+    gov.mean_confidence = 0.95
+    gov.item_count = 3
+    gov.skipped_sources = ["file_signals", "diffs"]
+    gov.reason = "high confidence"
+
+    with patch("chips.compiler.builder.governor_evaluate", return_value=gov):
+        BriefBuilder(conn, _make_embedder(), _make_compressor()).build(
+            "fix crash", scope="auth", tenant_id=_TENANT
+        )
+
+    names = _by_name(captured_spans.get_finished_spans())
+    assert _REQUIRED_SPANS <= set(names)
+    assert names["chips.compile.brief"].attributes[ATTR_GOVERNOR_TRIGGERED] is True
+    retrieve = names["chips.retrieve"]
+    assert retrieve.attributes[ATTR_RETRIEVER_DIFF_COUNT] == 0
+    assert retrieve.attributes[ATTR_RETRIEVER_FILE_SIGNAL_COUNT] == 0
