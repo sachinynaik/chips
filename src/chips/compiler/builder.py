@@ -238,10 +238,7 @@ class BriefBuilder:
         ) as root_span:
             task_kind = classify_task(task)
 
-            with start_span("chips.embed.task", kind=SpanKind.EMBEDDING) as embed_span:
-                embedding = self._embedder.embed(task)
-                if embed_span is not None:
-                    embed_span.set_attribute(ATTR_EMBEDDING_DIMENSIONS, len(embedding))
+            embedding = self._embed(task)
 
             learning = BriefLearningService(self._conn)
             adjustments = learning.load_adjustments(tenant_id=tenant_id)
@@ -400,19 +397,9 @@ class BriefBuilder:
             soft_items.sort(key=lambda item: (-item.score, item.item_id))
 
             # Rerank soft items using cross-encoder so query-item relevance beats raw scores.
-            with start_span("chips.rerank", kind=SpanKind.RERANKER) as rerank_span:
-                rerank_input_count = len(ranked) + len(soft_items)
-                ranked, soft_items = rerank(task, ranked, soft_items)
-                if rerank_span is not None:
-                    rerank_span.set_attribute(ATTR_RERANKER_INPUT_COUNT, rerank_input_count)
-                    rerank_span.set_attribute(
-                        ATTR_RERANKER_OUTPUT_COUNT, len(ranked) + len(soft_items)
-                    )
+            ranked, soft_items = self._rerank(task, ranked, soft_items)
 
-            with start_span("chips.compress", kind=SpanKind.TOOL):
-                compressed, compression_trace = self._compressor.compress_with_trace(
-                    hard_constraints, soft_items, task
-                )
+            compressed, compression_trace = self._compress(task, hard_constraints, soft_items)
 
             latency_ms = int((time.monotonic() - start) * 1000)
             brief_id = uuid.uuid4()
@@ -480,6 +467,34 @@ class BriefBuilder:
         brief = self.build(task, scope=scope, files=files, tenant_id=tenant_id)
         record_brief_decision(self._conn, brief, files=files)
         return brief
+
+    # ── build() phases (extracted strangler-fig; behavior-preserving) ─────────
+
+    def _embed(self, task: str) -> list[float]:
+        with start_span("chips.embed.task", kind=SpanKind.EMBEDDING) as embed_span:
+            embedding = self._embedder.embed(task)
+            if embed_span is not None:
+                embed_span.set_attribute(ATTR_EMBEDDING_DIMENSIONS, len(embedding))
+        return embedding
+
+    def _rerank(
+        self, task: str, ranked: list, soft_items: list[SoftContextItem]
+    ) -> tuple[list, list[SoftContextItem]]:
+        with start_span("chips.rerank", kind=SpanKind.RERANKER) as rerank_span:
+            rerank_input_count = len(ranked) + len(soft_items)
+            ranked, soft_items = rerank(task, ranked, soft_items)
+            if rerank_span is not None:
+                rerank_span.set_attribute(ATTR_RERANKER_INPUT_COUNT, rerank_input_count)
+                rerank_span.set_attribute(
+                    ATTR_RERANKER_OUTPUT_COUNT, len(ranked) + len(soft_items)
+                )
+        return ranked, soft_items
+
+    def _compress(
+        self, task: str, hard_constraints: list[str], soft_items: list[SoftContextItem]
+    ) -> tuple[str, dict]:
+        with start_span("chips.compress", kind=SpanKind.TOOL):
+            return self._compressor.compress_with_trace(hard_constraints, soft_items, task)
 
     def _persist(self, brief: ContextBrief) -> None:
         data_sources_json = json.dumps({
