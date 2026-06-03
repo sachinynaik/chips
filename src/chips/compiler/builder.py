@@ -218,6 +218,19 @@ class _Retrieval:
     governor: GovernorDecision
 
 
+@dataclass
+class _Assembly:
+    """Outputs of the rank/assemble phase (probes, ranking, policy, soft items)."""
+    runtime_status: SourceStatus
+    workflow_status: SourceStatus
+    ranked: list
+    learned: list
+    hard_constraints: list[str]
+    forbidden_edits: list[str]
+    allowed_edits: list[str]
+    soft_items: list[SoftContextItem]
+
+
 class BriefBuilder:
     def __init__(
         self,
@@ -254,109 +267,19 @@ class BriefBuilder:
 
             retrieval = self._retrieve(embedding, scope, files, tenant_id)
             memories = retrieval.memories
-            file_signals = retrieval.file_signals
             file_signals_status = retrieval.file_signals_status
             diffs = retrieval.diffs
-            structural_items = retrieval.structural_items
             governor = retrieval.governor
 
-            runtime_status = probe_runtime()
-            if runtime_status.status == "error":
-                logger.warning("runtime source probe failed: %s", runtime_status.detail)
-
-            workflow_status = probe_workflow()
-            if workflow_status.status == "error":
-                logger.warning("workflow source probe failed: %s", workflow_status.detail)
-
-            ranked = rank_signals(memories, file_signals, diffs=diffs)
-
-            # Static policy layer
-            policy_forbidden: list[str] = []
-            policy_required: list[str] = []
-            if self._policy_loader is not None:
-                for policy in self._policy_loader.for_scope(scope):
-                    policy_forbidden.extend(policy.forbidden)
-                    policy_required.extend(policy.required)
-
-            # Dynamic policy layer: learned anti-regression / declared constraints for scope.
-            learned = ConstraintRepository(self._conn).for_scope(scope, tenant_id=tenant_id)
-
-            # Hard constraints in locked precedence order (learned forbidden, policy
-            # forbidden, learned invariant, memory invariants, learned known_issue,
-            # findings). forbidden_edits stays strictly prohibitive; a forbidden/invariant
-            # constraint overrides a conflicting allowed edit (restrictive wins).
-            memory_constraints = [
-                m["content"] for m in memories
-                if m.get("type") in ("invariant", "contract")
-            ]
-            hard_additions, soft_additions = _extract_brief_signals(memories)
-            hard_constraints = assemble_hard_constraints(
-                learned,
-                policy_forbidden=policy_forbidden,
-                memory_invariants=memory_constraints,
-                hard_additions=hard_additions,
-            )
-            forbidden_edits = assemble_forbidden_edits(learned, policy_forbidden)
-            allowed_edits = effective_allowed_edits(policy_required, learned)
-
-            # Build scored soft items then sort by relevance before compression.
-            score_by_id: dict[str, float] = {s.item_id: s.score for s in ranked}
-            soft_items: list[SoftContextItem] = []
-            for m in memories:
-                if m.get("type") not in ("invariant", "contract"):
-                    soft_items.append(
-                        SoftContextItem(
-                            item_id=str(m.get("id", "")),
-                            category="memory",
-                            text=m["content"],
-                            score=score_by_id.get(str(m.get("id", "")), 0.0),
-                        )
-                    )
-            for d in diffs:
-                sha = str(d.get("sha", ""))
-                soft_items.append(
-                    SoftContextItem(
-                        item_id=sha,
-                        category="diff",
-                        text=f"Commit {sha[:8]}: {d['message']}",
-                        score=score_by_id.get(sha, 0.0),
-                    )
-                )
-            # File signals (#2): retrieved + ranked above; inject so the paid cost reaches
-            # the brief body. category="file" is intentionally NOT a citable EvidenceKind, so
-            # assemble_evidence_bundle skips these — they inform context, not hypotheses.
-            for sig in file_signals:
-                file_path = sig["file_path"]
-                soft_items.append(
-                    SoftContextItem(
-                        item_id=file_path,
-                        category="file",
-                        text=(
-                            f"File {file_path}: churn={sig.get('churn_score')}, "
-                            f"failures={sig.get('failure_count')}"
-                        ),
-                        score=score_by_id.get(file_path, 0.0),
-                    )
-                )
-            for find_id, text in soft_additions:
-                soft_items.append(
-                    SoftContextItem(
-                        item_id=find_id,
-                        category="finding",
-                        text=text,
-                        score=0.0,
-                    )
-                )
-            for s in structural_items:
-                soft_items.append(
-                    SoftContextItem(
-                        item_id=s["item_id"],
-                        category="structural",
-                        text=s["text"],
-                        score=0.0,
-                    )
-                )
-            soft_items.sort(key=lambda item: (-item.score, item.item_id))
+            assembly = self._rank_and_assemble(scope, tenant_id, retrieval)
+            runtime_status = assembly.runtime_status
+            workflow_status = assembly.workflow_status
+            ranked = assembly.ranked
+            learned = assembly.learned
+            hard_constraints = assembly.hard_constraints
+            forbidden_edits = assembly.forbidden_edits
+            allowed_edits = assembly.allowed_edits
+            soft_items = assembly.soft_items
 
             # Rerank soft items using cross-encoder so query-item relevance beats raw scores.
             ranked, soft_items = self._rerank(task, ranked, soft_items)
@@ -511,6 +434,123 @@ class BriefBuilder:
             diffs=diffs,
             structural_items=structural_items,
             governor=governor,
+        )
+
+    def _rank_and_assemble(
+        self, scope: str | None, tenant_id: str | None, retrieval: _Retrieval
+    ) -> _Assembly:
+        memories = retrieval.memories
+        file_signals = retrieval.file_signals
+        diffs = retrieval.diffs
+        structural_items = retrieval.structural_items
+
+        runtime_status = probe_runtime()
+        if runtime_status.status == "error":
+            logger.warning("runtime source probe failed: %s", runtime_status.detail)
+
+        workflow_status = probe_workflow()
+        if workflow_status.status == "error":
+            logger.warning("workflow source probe failed: %s", workflow_status.detail)
+
+        ranked = rank_signals(memories, file_signals, diffs=diffs)
+
+        # Static policy layer
+        policy_forbidden: list[str] = []
+        policy_required: list[str] = []
+        if self._policy_loader is not None:
+            for policy in self._policy_loader.for_scope(scope):
+                policy_forbidden.extend(policy.forbidden)
+                policy_required.extend(policy.required)
+
+        # Dynamic policy layer: learned anti-regression / declared constraints for scope.
+        learned = ConstraintRepository(self._conn).for_scope(scope, tenant_id=tenant_id)
+
+        # Hard constraints in locked precedence order (learned forbidden, policy
+        # forbidden, learned invariant, memory invariants, learned known_issue,
+        # findings). forbidden_edits stays strictly prohibitive; a forbidden/invariant
+        # constraint overrides a conflicting allowed edit (restrictive wins).
+        memory_constraints = [
+            m["content"] for m in memories
+            if m.get("type") in ("invariant", "contract")
+        ]
+        hard_additions, soft_additions = _extract_brief_signals(memories)
+        hard_constraints = assemble_hard_constraints(
+            learned,
+            policy_forbidden=policy_forbidden,
+            memory_invariants=memory_constraints,
+            hard_additions=hard_additions,
+        )
+        forbidden_edits = assemble_forbidden_edits(learned, policy_forbidden)
+        allowed_edits = effective_allowed_edits(policy_required, learned)
+
+        # Build scored soft items then sort by relevance before compression.
+        score_by_id: dict[str, float] = {s.item_id: s.score for s in ranked}
+        soft_items: list[SoftContextItem] = []
+        for m in memories:
+            if m.get("type") not in ("invariant", "contract"):
+                soft_items.append(
+                    SoftContextItem(
+                        item_id=str(m.get("id", "")),
+                        category="memory",
+                        text=m["content"],
+                        score=score_by_id.get(str(m.get("id", "")), 0.0),
+                    )
+                )
+        for d in diffs:
+            sha = str(d.get("sha", ""))
+            soft_items.append(
+                SoftContextItem(
+                    item_id=sha,
+                    category="diff",
+                    text=f"Commit {sha[:8]}: {d['message']}",
+                    score=score_by_id.get(sha, 0.0),
+                )
+            )
+        # File signals (#2): retrieved + ranked above; inject so the paid cost reaches
+        # the brief body. category="file" is intentionally NOT a citable EvidenceKind, so
+        # assemble_evidence_bundle skips these — they inform context, not hypotheses.
+        for sig in file_signals:
+            file_path = sig["file_path"]
+            soft_items.append(
+                SoftContextItem(
+                    item_id=file_path,
+                    category="file",
+                    text=(
+                        f"File {file_path}: churn={sig.get('churn_score')}, "
+                        f"failures={sig.get('failure_count')}"
+                    ),
+                    score=score_by_id.get(file_path, 0.0),
+                )
+            )
+        for find_id, text in soft_additions:
+            soft_items.append(
+                SoftContextItem(
+                    item_id=find_id,
+                    category="finding",
+                    text=text,
+                    score=0.0,
+                )
+            )
+        for s in structural_items:
+            soft_items.append(
+                SoftContextItem(
+                    item_id=s["item_id"],
+                    category="structural",
+                    text=s["text"],
+                    score=0.0,
+                )
+            )
+        soft_items.sort(key=lambda item: (-item.score, item.item_id))
+
+        return _Assembly(
+            runtime_status=runtime_status,
+            workflow_status=workflow_status,
+            ranked=ranked,
+            learned=learned,
+            hard_constraints=hard_constraints,
+            forbidden_edits=forbidden_edits,
+            allowed_edits=allowed_edits,
+            soft_items=soft_items,
         )
 
     def _rerank(
