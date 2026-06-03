@@ -5,9 +5,14 @@ from datetime import datetime, timezone
 
 from chips.compiler.models import RankedSignal
 
-_W_SEMANTIC = 0.5
-_W_RECENCY = 0.3
-_W_CHURN = 0.2
+# The active ranking weight-set, as a single named source. policy_version
+# content-hashes this (contextual-bandit design §9.1) and the future bandit tunes
+# it, so it lives here as one dict rather than scattered constants.
+RANKER_WEIGHTS = {"semantic": 0.5, "recency": 0.3, "churn": 0.2}
+
+_W_SEMANTIC = RANKER_WEIGHTS["semantic"]
+_W_RECENCY = RANKER_WEIGHTS["recency"]
+_W_CHURN = RANKER_WEIGHTS["churn"]
 
 
 def _recency_score(last_changed_at: datetime | None, now: datetime) -> float:

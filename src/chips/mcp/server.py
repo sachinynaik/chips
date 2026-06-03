@@ -43,7 +43,9 @@ def get_context_brief(
             builder = BriefBuilder(
                 conn, embedder, _get_compressor(), policy_loader=_get_policy_loader()
             )
-            brief = builder.build(task, scope=scope, files=files, tenant_id=tenant_id)
+            brief = builder.build_and_log(
+                task, scope=scope, files=files, tenant_id=tenant_id
+            )
         finally:
             conn.close()
     return {

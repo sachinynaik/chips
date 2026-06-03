@@ -15,6 +15,7 @@ from chips.compiler.learning import BriefLearningService
 from chips.compiler.models import ContextBrief, RetrievedItems, SoftContextItem, SourceStatus
 from chips.compiler.policy import PolicyLoader
 from chips.compiler.constraint_repository import ConstraintRepository
+from chips.compiler.decision_log_producer import record_brief_decision
 from chips.compiler.evidence import finding_evidence_id
 from chips.compiler.evidence_bundle import assemble_evidence_bundle
 from chips.compiler.constraints import (
@@ -461,6 +462,24 @@ class BriefBuilder:
             self._persist(brief)
             observe_brief_build(status="success", latency_ms=latency_ms)
             return brief
+
+    def build_and_log(
+        self,
+        task: str,
+        scope: str | None = None,
+        files: list[str] | None = None,
+        tenant_id: str | None = None,
+    ) -> ContextBrief:
+        """Build a brief and append its Foundation decision row (one per brief).
+
+        The single logging chokepoint for production callers (both MCP entry
+        points), kept *beside* ``build`` rather than inside it so ``build`` stays
+        a pure, DB-side-effect-free unit. ``build`` = brief only; ``build_and_log``
+        = brief + decision record (log-count == brief-count).
+        """
+        brief = self.build(task, scope=scope, files=files, tenant_id=tenant_id)
+        record_brief_decision(self._conn, brief, files=files)
+        return brief
 
     def _persist(self, brief: ContextBrief) -> None:
         data_sources_json = json.dumps({

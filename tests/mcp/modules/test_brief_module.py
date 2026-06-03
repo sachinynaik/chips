@@ -38,7 +38,7 @@ def test_get_context_brief_builds_and_returns_dict():
 
     with patch("chips.mcp.modules.brief.BriefBuilder") as mock_builder_cls:
         mock_builder = MagicMock()
-        mock_builder.build.return_value = fake_brief
+        mock_builder.build_and_log.return_value = fake_brief
         mock_builder_cls.return_value = mock_builder
 
         module = _make_module()
@@ -65,13 +65,13 @@ def test_get_context_brief_passes_task_and_scope_to_builder():
 
     with patch("chips.mcp.modules.brief.BriefBuilder") as mock_builder_cls:
         mock_builder = MagicMock()
-        mock_builder.build.return_value = fake_brief
+        mock_builder.build_and_log.return_value = fake_brief
         mock_builder_cls.return_value = mock_builder
 
         module = _make_module()
         module.get_context_brief(task="add feature X", scope="payments")
 
-    mock_builder.build.assert_called_once_with(
+    mock_builder.build_and_log.assert_called_once_with(
         "add feature X", scope="payments", files=None, tenant_id=None
     )
 
@@ -93,13 +93,13 @@ def test_get_context_brief_threads_tenant_id_to_builder():
 
     with patch("chips.mcp.modules.brief.BriefBuilder") as mock_builder_cls:
         mock_builder = MagicMock()
-        mock_builder.build.return_value = fake_brief
+        mock_builder.build_and_log.return_value = fake_brief
         mock_builder_cls.return_value = mock_builder
 
         module = _make_module()
         module.get_context_brief(task="fix crash", scope="auth", tenant_id=_TENANT)
 
-    mock_builder.build.assert_called_once_with(
+    mock_builder.build_and_log.assert_called_once_with(
         "fix crash", scope="auth", files=None, tenant_id=_TENANT
     )
 
@@ -132,7 +132,7 @@ def test_get_context_brief_serializes_data_sources_to_dict():
 
     with patch("chips.mcp.modules.brief.BriefBuilder") as mock_builder_cls:
         mock_builder = MagicMock()
-        mock_builder.build.return_value = fake_brief
+        mock_builder.build_and_log.return_value = fake_brief
         mock_builder_cls.return_value = mock_builder
         result = _make_module().get_context_brief(task="fix crash")
 

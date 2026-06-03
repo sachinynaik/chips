@@ -117,7 +117,7 @@ class TestDataSourcesWireContract:
             policy_loader=MagicMock(),
         )
         with patch("chips.mcp.modules.brief.BriefBuilder") as mock_cls:
-            mock_cls.return_value.build.return_value = fake_brief
+            mock_cls.return_value.build_and_log.return_value = fake_brief
             return module.get_context_brief(task="t")
 
     def test_data_sources_wire_has_checked_at_field(self):

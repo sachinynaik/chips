@@ -73,7 +73,9 @@ class BriefModule:
                 self._compressor,
                 policy_loader=self._policy_loader,
             )
-            brief = builder.build(task, scope=scope, files=files, tenant_id=tenant_id)
+            brief = builder.build_and_log(
+                task, scope=scope, files=files, tenant_id=tenant_id
+            )
         finally:
             conn.close()
 

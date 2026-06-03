@@ -47,7 +47,7 @@ def test_get_context_brief_returns_dict_with_expected_keys():
         patch("chips.mcp.server._get_conn", return_value=MagicMock()),
         patch("chips.mcp.server.BriefBuilder") as mock_cls,
     ):
-        mock_cls.return_value.build.return_value = brief
+        mock_cls.return_value.build_and_log.return_value = brief
         from chips.mcp.server import get_context_brief
         result = get_context_brief(task="fix crash")
 
@@ -66,11 +66,11 @@ def test_get_context_brief_passes_scope_to_builder():
         patch("chips.mcp.server._get_conn", return_value=MagicMock()),
         patch("chips.mcp.server.BriefBuilder") as mock_cls,
     ):
-        mock_cls.return_value.build.return_value = brief
+        mock_cls.return_value.build_and_log.return_value = brief
         from chips.mcp.server import get_context_brief
         get_context_brief(task="add feature", scope="payments")
 
-    mock_cls.return_value.build.assert_called_once_with(
+    mock_cls.return_value.build_and_log.assert_called_once_with(
         "add feature", scope="payments", files=None, tenant_id=None
     )
 
@@ -85,11 +85,11 @@ def test_get_context_brief_threads_tenant_id_to_builder():
         patch("chips.mcp.server._get_conn", return_value=MagicMock()),
         patch("chips.mcp.server.BriefBuilder") as mock_cls,
     ):
-        mock_cls.return_value.build.return_value = brief
+        mock_cls.return_value.build_and_log.return_value = brief
         from chips.mcp.server import get_context_brief
         result = get_context_brief(task="fix crash", tenant_id=_TENANT)
 
-    mock_cls.return_value.build.assert_called_once_with(
+    mock_cls.return_value.build_and_log.assert_called_once_with(
         "fix crash", scope=None, files=None, tenant_id=_TENANT
     )
     assert result["tenant_id"] == _TENANT
@@ -140,7 +140,7 @@ def test_get_context_brief_data_sources_shape_matches_contract():
         patch("chips.mcp.server._get_conn", return_value=MagicMock()),
         patch("chips.mcp.server.BriefBuilder") as mock_cls,
     ):
-        mock_cls.return_value.build.return_value = brief
+        mock_cls.return_value.build_and_log.return_value = brief
         from chips.mcp.server import get_context_brief
         result = get_context_brief(task="fix crash")
 
@@ -162,7 +162,7 @@ def test_get_context_brief_data_sources_known_keys_present():
         patch("chips.mcp.server._get_conn", return_value=MagicMock()),
         patch("chips.mcp.server.BriefBuilder") as mock_cls,
     ):
-        mock_cls.return_value.build.return_value = brief
+        mock_cls.return_value.build_and_log.return_value = brief
         from chips.mcp.server import get_context_brief
         result = get_context_brief(task="fix crash")
 
@@ -181,7 +181,7 @@ def test_get_context_brief_data_sources_status_vocabulary():
         patch("chips.mcp.server._get_conn", return_value=MagicMock()),
         patch("chips.mcp.server.BriefBuilder") as mock_cls,
     ):
-        mock_cls.return_value.build.return_value = brief
+        mock_cls.return_value.build_and_log.return_value = brief
         from chips.mcp.server import get_context_brief
         result = get_context_brief(task="fix crash")
 
