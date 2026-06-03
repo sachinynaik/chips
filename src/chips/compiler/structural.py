@@ -11,9 +11,10 @@ a file cannot be parsed.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from chips.compiler.normalization import normalize_path, normalize_text, posix_basename
 
 logger = logging.getLogger(__name__)
 
@@ -148,8 +149,9 @@ def _signature_text(node: "Node", source: bytes, body_text: str) -> str:  # type
     body_node = node.child_by_field_name("body")
     if body_node is not None and body_node.start_byte > node.start_byte:
         sig = source[node.start_byte:body_node.start_byte].decode("utf-8", errors="replace")
-        return sig.rstrip()
-    return body_text.split("\n", 1)[0]
+    else:
+        sig = body_text.split("\n", 1)[0]
+    return normalize_text(sig)
 
 
 def _collect_calls(node: "Node", out: list[str]) -> None:  # type: ignore[name-defined]
@@ -242,8 +244,8 @@ def retrieve_structural(
             break
 
         results.append({
-            "item_id": f"struct:{sym.file_path}:{sym.name}",
-            "text": f"[{sym.kind}] {sym.name} ({os.path.basename(sym.file_path)}:{sym.start_line})\n{rendered}",
+            "item_id": f"struct:{normalize_path(sym.file_path)}:{sym.name}",
+            "text": f"[{sym.kind}] {sym.name} ({posix_basename(sym.file_path)}:{sym.start_line})\n{rendered}",
             "kind": sym.kind,
             "file": sym.file_path,
             "callees": sym.callees,
