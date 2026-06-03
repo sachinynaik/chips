@@ -61,6 +61,10 @@ class StructuralSymbol:
     start_line: int
     end_line: int
     body_text: str
+    # Declaration without the suite/body block (e.g. ``def f(a) -> X:``). Used by
+    # the bodyless render mode (signature-map spike): same selection, far fewer
+    # tokens, no extra parse cost (reuses this tree-sitter pass).
+    signature_text: str = ""
     callees: list[str] = field(default_factory=list)
 
 
@@ -106,6 +110,7 @@ def _extract_symbols(source: bytes, file_path: str, lang: object) -> list[Struct
             start = node.start_point[0]
             end = node.end_point[0]
             body = "\n".join(lines[start:end + 1])
+            signature = _signature_text(node, source, body)
 
             # Collect call targets within this definition
             callees: list[str] = []
@@ -119,6 +124,7 @@ def _extract_symbols(source: bytes, file_path: str, lang: object) -> list[Struct
                     start_line=start + 1,
                     end_line=end + 1,
                     body_text=body,
+                    signature_text=signature,
                     callees=list(dict.fromkeys(callees)),  # deduplicate preserving order
                 ))
 
@@ -127,6 +133,23 @@ def _extract_symbols(source: bytes, file_path: str, lang: object) -> list[Struct
 
     visit(tree.root_node)
     return symbols
+
+
+def _signature_text(node: "Node", source: bytes, body_text: str) -> str:  # type: ignore[name-defined]
+    """The declaration up to (not including) the suite/body block.
+
+    For ``def f(a) -> X: <block>`` returns ``def f(a) -> X:``. Uses the AST's
+    ``body`` field boundary (language-agnostic across the supported grammars);
+    falls back to the first physical line when there is no body child. Trailing
+    whitespace is stripped so the result is deterministic in a single env. (Full
+    cross-OS canonicalisation is the normalization contract — slice 4 — not the
+    spike.)
+    """
+    body_node = node.child_by_field_name("body")
+    if body_node is not None and body_node.start_byte > node.start_byte:
+        sig = source[node.start_byte:body_node.start_byte].decode("utf-8", errors="replace")
+        return sig.rstrip()
+    return body_text.split("\n", 1)[0]
 
 
 def _collect_calls(node: "Node", out: list[str]) -> None:  # type: ignore[name-defined]
@@ -153,11 +176,16 @@ def retrieve_structural(
     anchor_names: list[str] | None = None,
     token_budget: int = 2000,
     hop_depth: int = 2,
+    bodies: bool = True,
 ) -> list[dict]:
     """Return structural context for the given files within the token budget.
 
     Performs a BFS outward from anchor symbols (or top-level symbols if none
     given), adding symbol definitions until the budget is exhausted.
+
+    ``bodies`` (signature-map spike): when ``False``, render each symbol's
+    signature instead of its full body — same selection, far fewer tokens, no
+    extra parse cost. Default ``True`` preserves the existing behaviour exactly.
 
     Returns a list of dicts suitable for creating SoftContextItems:
         {"item_id": str, "text": str, "kind": str, "file": str, "callees": list[str]}
@@ -208,13 +236,14 @@ def retrieve_structural(
         if sym is None:
             continue
 
-        cost = _tok(sym.body_text)
+        rendered = sym.body_text if bodies else sym.signature_text
+        cost = _tok(rendered)
         if tokens_used + cost > token_budget:
             break
 
         results.append({
             "item_id": f"struct:{sym.file_path}:{sym.name}",
-            "text": f"[{sym.kind}] {sym.name} ({os.path.basename(sym.file_path)}:{sym.start_line})\n{sym.body_text}",
+            "text": f"[{sym.kind}] {sym.name} ({os.path.basename(sym.file_path)}:{sym.start_line})\n{rendered}",
             "kind": sym.kind,
             "file": sym.file_path,
             "callees": sym.callees,
