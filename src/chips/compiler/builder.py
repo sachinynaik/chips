@@ -35,6 +35,23 @@ from chips.observability.metrics import (
     observe_governor_decision,
     observe_structural_retrieval,
 )
+from chips.observability.openinference import (
+    ATTR_BRIEF_ID,
+    ATTR_EMBEDDING_DIMENSIONS,
+    ATTR_GOVERNOR_TRIGGERED,
+    ATTR_LATENCY_MS,
+    ATTR_RERANKER_INPUT_COUNT,
+    ATTR_RERANKER_OUTPUT_COUNT,
+    ATTR_RETRIEVER_DIFF_COUNT,
+    ATTR_RETRIEVER_FILE_SIGNAL_COUNT,
+    ATTR_RETRIEVER_MEMORY_COUNT,
+    ATTR_RETRIEVER_STRUCTURAL_COUNT,
+    ATTR_SCOPE,
+    ATTR_TASK_KIND,
+    ATTR_TENANT_ID,
+    SpanKind,
+)
+from chips.observability.tracing import start_span
 
 logger = logging.getLogger(__name__)
 
@@ -213,200 +230,237 @@ class BriefBuilder:
 
         start = time.monotonic()
 
-        task_kind = classify_task(task)
-        embedding = self._embedder.embed(task)
-        learning = BriefLearningService(self._conn)
-        adjustments = learning.load_adjustments(tenant_id=tenant_id)
+        with start_span(
+            "chips.compile.brief",
+            kind=SpanKind.CHAIN,
+            **{ATTR_SCOPE: scope, ATTR_TENANT_ID: tenant_id},
+        ) as root_span:
+            task_kind = classify_task(task)
 
-        memories = retrieve_memories(self._conn, embedding, scope=scope, tenant_id=tenant_id)
-        _apply_learning_adjustments(memories, adjustments)
+            with start_span("chips.embed.task", kind=SpanKind.EMBEDDING) as embed_span:
+                embedding = self._embedder.embed(task)
+                if embed_span is not None:
+                    embed_span.set_attribute(ATTR_EMBEDDING_DIMENSIONS, len(embedding))
 
-        # Governor: if memories are already high-confidence, skip secondary sources.
-        governor = governor_evaluate(memories)
-        observe_governor_decision(triggered=governor.triggered)
+            learning = BriefLearningService(self._conn)
+            adjustments = learning.load_adjustments(tenant_id=tenant_id)
 
-        effective_files = files if files else []
-        if governor.triggered:
-            file_signals = []
-            file_signals_status = SourceStatus(
-                status="not_configured",
-                detail=f"governor short-circuit: {governor.reason}",
-            )
-            diffs = []
-        else:
-            file_signals = retrieve_file_signals(
-                self._conn, effective_files, tenant_id=tenant_id
-            )
-            if not effective_files:
-                file_signals_status = SourceStatus(
-                    status="not_configured", detail="no files provided to build()"
+            with start_span("chips.retrieve", kind=SpanKind.RETRIEVER) as retrieve_span:
+                memories = retrieve_memories(
+                    self._conn, embedding, scope=scope, tenant_id=tenant_id
                 )
-            elif file_signals:
-                file_signals_status = SourceStatus(status="available")
-            else:
-                file_signals_status = SourceStatus(status="unavailable")
+                _apply_learning_adjustments(memories, adjustments)
 
-            diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
+                # Governor: if memories are already high-confidence, skip secondary sources.
+                governor = governor_evaluate(memories)
+                observe_governor_decision(triggered=governor.triggered)
 
-        # Structural retrieval: AST call-graph walk over provided files.
-        structural_items: list[dict] = []
-        if effective_files and not governor.triggered:
-            try:
-                structural_items = retrieve_structural(effective_files)
-                observe_structural_retrieval(status="success")
-            except Exception as exc:
-                logger.warning("structural retrieval failed: %s", exc)
-                observe_structural_retrieval(status="error")
-        else:
-            observe_structural_retrieval(status="skipped")
+                effective_files = files if files else []
+                if governor.triggered:
+                    file_signals = []
+                    file_signals_status = SourceStatus(
+                        status="not_configured",
+                        detail=f"governor short-circuit: {governor.reason}",
+                    )
+                    diffs = []
+                else:
+                    file_signals = retrieve_file_signals(
+                        self._conn, effective_files, tenant_id=tenant_id
+                    )
+                    if not effective_files:
+                        file_signals_status = SourceStatus(
+                            status="not_configured", detail="no files provided to build()"
+                        )
+                    elif file_signals:
+                        file_signals_status = SourceStatus(status="available")
+                    else:
+                        file_signals_status = SourceStatus(status="unavailable")
 
-        runtime_status = probe_runtime()
-        if runtime_status.status == "error":
-            logger.warning("runtime source probe failed: %s", runtime_status.detail)
+                    diffs = retrieve_diffs(self._conn, scope=scope, tenant_id=tenant_id)
 
-        workflow_status = probe_workflow()
-        if workflow_status.status == "error":
-            logger.warning("workflow source probe failed: %s", workflow_status.detail)
+                # Structural retrieval: AST call-graph walk over provided files.
+                structural_items: list[dict] = []
+                if effective_files and not governor.triggered:
+                    try:
+                        structural_items = retrieve_structural(effective_files)
+                        observe_structural_retrieval(status="success")
+                    except Exception as exc:
+                        logger.warning("structural retrieval failed: %s", exc)
+                        observe_structural_retrieval(status="error")
+                else:
+                    observe_structural_retrieval(status="skipped")
 
-        ranked = rank_signals(memories, file_signals, diffs=diffs)
+                if retrieve_span is not None:
+                    retrieve_span.set_attribute(ATTR_RETRIEVER_MEMORY_COUNT, len(memories))
+                    retrieve_span.set_attribute(ATTR_RETRIEVER_DIFF_COUNT, len(diffs))
+                    retrieve_span.set_attribute(
+                        ATTR_RETRIEVER_FILE_SIGNAL_COUNT, len(file_signals)
+                    )
+                    retrieve_span.set_attribute(
+                        ATTR_RETRIEVER_STRUCTURAL_COUNT, len(structural_items)
+                    )
 
-        # Static policy layer
-        policy_forbidden: list[str] = []
-        policy_required: list[str] = []
-        if self._policy_loader is not None:
-            for policy in self._policy_loader.for_scope(scope):
-                policy_forbidden.extend(policy.forbidden)
-                policy_required.extend(policy.required)
+            runtime_status = probe_runtime()
+            if runtime_status.status == "error":
+                logger.warning("runtime source probe failed: %s", runtime_status.detail)
 
-        # Dynamic policy layer: learned anti-regression / declared constraints for scope.
-        learned = ConstraintRepository(self._conn).for_scope(scope, tenant_id=tenant_id)
+            workflow_status = probe_workflow()
+            if workflow_status.status == "error":
+                logger.warning("workflow source probe failed: %s", workflow_status.detail)
 
-        # Hard constraints in locked precedence order (learned forbidden, policy
-        # forbidden, learned invariant, memory invariants, learned known_issue,
-        # findings). forbidden_edits stays strictly prohibitive; a forbidden/invariant
-        # constraint overrides a conflicting allowed edit (restrictive wins).
-        memory_constraints = [
-            m["content"] for m in memories
-            if m.get("type") in ("invariant", "contract")
-        ]
-        hard_additions, soft_additions = _extract_brief_signals(memories)
-        hard_constraints = assemble_hard_constraints(
-            learned,
-            policy_forbidden=policy_forbidden,
-            memory_invariants=memory_constraints,
-            hard_additions=hard_additions,
-        )
-        forbidden_edits = assemble_forbidden_edits(learned, policy_forbidden)
-        allowed_edits = effective_allowed_edits(policy_required, learned)
+            ranked = rank_signals(memories, file_signals, diffs=diffs)
 
-        # Build scored soft items then sort by relevance before compression.
-        score_by_id: dict[str, float] = {s.item_id: s.score for s in ranked}
-        soft_items: list[SoftContextItem] = []
-        for m in memories:
-            if m.get("type") not in ("invariant", "contract"):
+            # Static policy layer
+            policy_forbidden: list[str] = []
+            policy_required: list[str] = []
+            if self._policy_loader is not None:
+                for policy in self._policy_loader.for_scope(scope):
+                    policy_forbidden.extend(policy.forbidden)
+                    policy_required.extend(policy.required)
+
+            # Dynamic policy layer: learned anti-regression / declared constraints for scope.
+            learned = ConstraintRepository(self._conn).for_scope(scope, tenant_id=tenant_id)
+
+            # Hard constraints in locked precedence order (learned forbidden, policy
+            # forbidden, learned invariant, memory invariants, learned known_issue,
+            # findings). forbidden_edits stays strictly prohibitive; a forbidden/invariant
+            # constraint overrides a conflicting allowed edit (restrictive wins).
+            memory_constraints = [
+                m["content"] for m in memories
+                if m.get("type") in ("invariant", "contract")
+            ]
+            hard_additions, soft_additions = _extract_brief_signals(memories)
+            hard_constraints = assemble_hard_constraints(
+                learned,
+                policy_forbidden=policy_forbidden,
+                memory_invariants=memory_constraints,
+                hard_additions=hard_additions,
+            )
+            forbidden_edits = assemble_forbidden_edits(learned, policy_forbidden)
+            allowed_edits = effective_allowed_edits(policy_required, learned)
+
+            # Build scored soft items then sort by relevance before compression.
+            score_by_id: dict[str, float] = {s.item_id: s.score for s in ranked}
+            soft_items: list[SoftContextItem] = []
+            for m in memories:
+                if m.get("type") not in ("invariant", "contract"):
+                    soft_items.append(
+                        SoftContextItem(
+                            item_id=str(m.get("id", "")),
+                            category="memory",
+                            text=m["content"],
+                            score=score_by_id.get(str(m.get("id", "")), 0.0),
+                        )
+                    )
+            for d in diffs:
+                sha = str(d.get("sha", ""))
                 soft_items.append(
                     SoftContextItem(
-                        item_id=str(m.get("id", "")),
-                        category="memory",
-                        text=m["content"],
-                        score=score_by_id.get(str(m.get("id", "")), 0.0),
+                        item_id=sha,
+                        category="diff",
+                        text=f"Commit {sha[:8]}: {d['message']}",
+                        score=score_by_id.get(sha, 0.0),
                     )
                 )
-        for d in diffs:
-            sha = str(d.get("sha", ""))
-            soft_items.append(
-                SoftContextItem(
-                    item_id=sha,
-                    category="diff",
-                    text=f"Commit {sha[:8]}: {d['message']}",
-                    score=score_by_id.get(sha, 0.0),
+            # File signals (#2): retrieved + ranked above; inject so the paid cost reaches
+            # the brief body. category="file" is intentionally NOT a citable EvidenceKind, so
+            # assemble_evidence_bundle skips these — they inform context, not hypotheses.
+            for sig in file_signals:
+                file_path = sig["file_path"]
+                soft_items.append(
+                    SoftContextItem(
+                        item_id=file_path,
+                        category="file",
+                        text=(
+                            f"File {file_path}: churn={sig.get('churn_score')}, "
+                            f"failures={sig.get('failure_count')}"
+                        ),
+                        score=score_by_id.get(file_path, 0.0),
+                    )
                 )
-            )
-        # File signals (#2): retrieved + ranked above; inject so the paid cost reaches
-        # the brief body. category="file" is intentionally NOT a citable EvidenceKind, so
-        # assemble_evidence_bundle skips these — they inform context, not hypotheses.
-        for sig in file_signals:
-            file_path = sig["file_path"]
-            soft_items.append(
-                SoftContextItem(
-                    item_id=file_path,
-                    category="file",
-                    text=(
-                        f"File {file_path}: churn={sig.get('churn_score')}, "
-                        f"failures={sig.get('failure_count')}"
-                    ),
-                    score=score_by_id.get(file_path, 0.0),
+            for find_id, text in soft_additions:
+                soft_items.append(
+                    SoftContextItem(
+                        item_id=find_id,
+                        category="finding",
+                        text=text,
+                        score=0.0,
+                    )
                 )
-            )
-        for find_id, text in soft_additions:
-            soft_items.append(
-                SoftContextItem(
-                    item_id=find_id,
-                    category="finding",
-                    text=text,
-                    score=0.0,
+            for s in structural_items:
+                soft_items.append(
+                    SoftContextItem(
+                        item_id=s["item_id"],
+                        category="structural",
+                        text=s["text"],
+                        score=0.0,
+                    )
                 )
-            )
-        for s in structural_items:
-            soft_items.append(
-                SoftContextItem(
-                    item_id=s["item_id"],
-                    category="structural",
-                    text=s["text"],
-                    score=0.0,
+            soft_items.sort(key=lambda item: (-item.score, item.item_id))
+
+            # Rerank soft items using cross-encoder so query-item relevance beats raw scores.
+            with start_span("chips.rerank", kind=SpanKind.RERANKER) as rerank_span:
+                rerank_input_count = len(ranked) + len(soft_items)
+                ranked, soft_items = rerank(task, ranked, soft_items)
+                if rerank_span is not None:
+                    rerank_span.set_attribute(ATTR_RERANKER_INPUT_COUNT, rerank_input_count)
+                    rerank_span.set_attribute(
+                        ATTR_RERANKER_OUTPUT_COUNT, len(ranked) + len(soft_items)
+                    )
+
+            with start_span("chips.compress", kind=SpanKind.TOOL):
+                compressed, compression_trace = self._compressor.compress_with_trace(
+                    hard_constraints, soft_items, task
                 )
+
+            latency_ms = int((time.monotonic() - start) * 1000)
+            brief_id = uuid.uuid4()
+            generated_at = datetime.now(timezone.utc)
+
+            if root_span is not None:
+                root_span.set_attribute(ATTR_TASK_KIND, str(task_kind))
+                root_span.set_attribute(ATTR_BRIEF_ID, str(brief_id))
+                root_span.set_attribute(ATTR_LATENCY_MS, latency_ms)
+                root_span.set_attribute(ATTR_GOVERNOR_TRIGGERED, governor.triggered)
+
+            # Phase 1 (§I.5): project the assembled constraints + soft items into a typed,
+            # stable-ID EvidenceBundle (bundle_id == brief_id). Findings already carry their
+            # find:<hash> IDs; constraints become the contradiction layer.
+            evidence_bundle = assemble_evidence_bundle(brief_id, learned, soft_items)
+
+            brief = ContextBrief(
+                brief_id=brief_id,
+                task=task,
+                scope=scope,
+                generated_at=generated_at,
+                latency_ms=latency_ms,
+                task_kind=str(task_kind),
+                retrieved=RetrievedItems(memories=memories, diffs=diffs),
+                ranked_signals=ranked,
+                hard_constraints=hard_constraints,
+                compressed_context=compressed,
+                tenant_id=tenant_id,
+                data_sources={
+                    "file_signals": file_signals_status,
+                    "runtime": runtime_status,
+                    "workflow": workflow_status,
+                },
+                compression_trace=compression_trace,
+                forbidden_edits=forbidden_edits,
+                allowed_edits=allowed_edits,
+                governor_decision={
+                    "triggered": governor.triggered,
+                    "mean_confidence": governor.mean_confidence,
+                    "item_count": governor.item_count,
+                    "skipped_sources": governor.skipped_sources,
+                    "reason": governor.reason,
+                },
+                evidence_bundle=evidence_bundle,
             )
-        soft_items.sort(key=lambda item: (-item.score, item.item_id))
 
-        # Rerank soft items using cross-encoder so query-item relevance beats raw scores.
-        ranked, soft_items = rerank(task, ranked, soft_items)
-
-        compressed, compression_trace = self._compressor.compress_with_trace(
-            hard_constraints, soft_items, task
-        )
-
-        latency_ms = int((time.monotonic() - start) * 1000)
-        brief_id = uuid.uuid4()
-        generated_at = datetime.now(timezone.utc)
-
-        # Phase 1 (§I.5): project the assembled constraints + soft items into a typed,
-        # stable-ID EvidenceBundle (bundle_id == brief_id). Findings already carry their
-        # find:<hash> IDs; constraints become the contradiction layer.
-        evidence_bundle = assemble_evidence_bundle(brief_id, learned, soft_items)
-
-        brief = ContextBrief(
-            brief_id=brief_id,
-            task=task,
-            scope=scope,
-            generated_at=generated_at,
-            latency_ms=latency_ms,
-            task_kind=str(task_kind),
-            retrieved=RetrievedItems(memories=memories, diffs=diffs),
-            ranked_signals=ranked,
-            hard_constraints=hard_constraints,
-            compressed_context=compressed,
-            tenant_id=tenant_id,
-            data_sources={
-                "file_signals": file_signals_status,
-                "runtime": runtime_status,
-                "workflow": workflow_status,
-            },
-            compression_trace=compression_trace,
-            forbidden_edits=forbidden_edits,
-            allowed_edits=allowed_edits,
-            governor_decision={
-                "triggered": governor.triggered,
-                "mean_confidence": governor.mean_confidence,
-                "item_count": governor.item_count,
-                "skipped_sources": governor.skipped_sources,
-                "reason": governor.reason,
-            },
-            evidence_bundle=evidence_bundle,
-        )
-
-        self._persist(brief)
-        observe_brief_build(status="success", latency_ms=latency_ms)
-        return brief
+            self._persist(brief)
+            observe_brief_build(status="success", latency_ms=latency_ms)
+            return brief
 
     def _persist(self, brief: ContextBrief) -> None:
         data_sources_json = json.dumps({
