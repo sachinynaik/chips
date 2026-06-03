@@ -4,6 +4,8 @@ import os
 from contextlib import contextmanager
 from typing import Iterator
 
+from chips.observability.openinference import SPAN_KIND_KEY
+
 try:
     from opentelemetry import trace
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -65,14 +67,27 @@ def configure_telemetry(service_name: str = "chips-cortex") -> bool:
     return True
 
 
+def _get_tracer():
+    """Resolve the ``chips`` tracer from the active provider.
+
+    Isolated as a seam so tests can inject an in-memory provider without
+    fighting OpenTelemetry's process-global set-once guard.
+    """
+    return trace.get_tracer("chips")
+
+
 @contextmanager
-def start_span(name: str, **attributes: object) -> Iterator[object | None]:
+def start_span(
+    name: str, kind: str | None = None, **attributes: object
+) -> Iterator[object | None]:
     if not _OTEL_AVAILABLE:
         yield None
         return
 
-    tracer = trace.get_tracer("chips")
+    tracer = _get_tracer()
     with tracer.start_as_current_span(name) as span:
+        if kind is not None:
+            span.set_attribute(SPAN_KIND_KEY, kind)
         for key, value in attributes.items():
             if value is not None:
                 span.set_attribute(key, value)
