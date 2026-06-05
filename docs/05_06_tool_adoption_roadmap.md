@@ -20,7 +20,10 @@ everything stack-specific must normalize into the generic evidence model.
 1. **Foundation completes first.** No tool work lands before the Foundation tranche
    closes (slice 3 `repo_metrics_v` + cross-OS runner). ADRs are written now; tool
    *work* is sequenced after. (Exception: companion-tool spikes that touch zero CHIPS
-   code, e.g. zap.)
+   code, e.g. zap.) **This is a governance/sequencing rule, not a technical-dependency
+   claim** — Zenith's technical gates (contract-lane spike, OTel ingestion adapter,
+   retention prototype) do not depend on slice 3 or the cross-OS runner; the ordering
+   exists to keep the tranche focused.
 2. **Retrieval lanes are and/or, not either/or.** Semantic lane (embeddings +
    tree-sitter) works on any codebase; a contract lane (exact
    `domain_action_entity_parameter` token match) applies only where the codebase carries
@@ -55,7 +58,7 @@ integrated. If a borrow's value is achievable without new machinery, it stays a 
 
 | Tool | Spike question | Success metric | Abandon condition | Time budget | Ops budget | ADR |
 |------|----------------|----------------|-------------------|-------------|------------|-----|
-| Zenith | Spike for possible integration: does contract-token trace search beat what we already have? | Contract-token investigation queries materially beat SigNoz + OTel/SQL filtering (defined margin set at spike start; target: queries that are impossible or ≥10× slower today) | Query win is marginal relative to the cost of operating another (alpha) service; or contract-lane thesis spike fails first | 2 days | Spike only on the shared WSL host within existing resources; **no always-on service before an integration decision** | ADR-002 |
+| Zenith | Spike for possible integration: does contract-token trace search beat what we already have? | **Locked rubric in ADR-002** (pre-committed 10-query corpus; ≥7/10 impossible-or-≥10×-faster vs SigNoz+OTel/SQL; none worse; retention prototype works; coverage audit ≥80%) — amendable only by recorded ADR amendment, never at spike start | Per ADR-002 locked rubric: below pass; >2 days; >20 GB; coverage audit fails; or >50% of real investigation questions are raw-log-dependent; or contract-lane thesis spike fails first | 2 days | Ephemeral spike deployment on the shared WSL host, torn down after; **no always-on service before an integration decision** | ADR-002 |
 | zap | Companion spike: measured operator-loop token savings without information loss | Measured savings on real CHIPS sessions (test logs, act/CI output) with zero observed loss of needed detail | **Hides needed error detail even once** on or near the exclusion list; or savings unmeasurable/marginal | 0.5 day | None (local CLI, opt-in, off product path) | ADR-003 |
 
 Spike owner for both: Sachin + session agent (solo repo).

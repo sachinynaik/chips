@@ -92,18 +92,25 @@ No always-on service before an integration decision.
   simpler. A wipe means the cache re-warms from new traffic only — accepted.
 - **Where the engineering actually lives: the tee/filter layer, not Zenith.** The
   classic tail-sampling tension (too loose = a smaller Tempo at the same cost; too
-  tight = the incident trace isn't cached) is structurally reduced here because the
-  selection predicate is *property-based, not tail-based*: "span carries contract
-  baggage" is decidable at ingest. Spans without contract tokens are simply out of this
-  cache's scope by design.
+  tight = the incident trace isn't cached) is *reduced but not removed* by the
+  property-based predicate ("span carries contract baggage" is decidable at ingest —
+  no tail buffering needed). **Decidable is not sufficient:** the predicate's *coverage
+  quality* — which layers actually propagate the contract today, how many relevant
+  incident traces would be excluded, what happens when only some spans in a trace carry
+  the token, whether baggage and span attributes differ in reliability — is unproven.
+  The Coverage audit below is a mandatory spike deliverable for exactly this reason.
 
 ## Approach
 
-**Integrate** (run the service, ingest via OTLP), with the integration *shape* —
-tee/filter predicate, retention, evidence mapping — designed in CHIPS. Per the locked
-design rule, contract consumption is gated on the contract design being explicit, not on
-every protocol hop being instrumented; missing hops (MQTT/WebSockets/protobuf) get tokens
-added when needed.
+**Spike via ephemeral derived-cache deployment** — consistent with the decision above,
+NOT integration. Zenith runs only for the spike's duration on the shared WSL host and is
+torn down afterward; no always-on service exists unless a later, separate integration
+decision is made against this ADR's rubric. The integration *shape* (tee/filter
+predicate, retention, evidence mapping) is designed in CHIPS either way. Per the
+governing design rule, contract consumption gates on the contract design being explicit,
+not on every protocol hop being instrumented; missing hops (MQTT/WebSockets/protobuf)
+get tokens added when needed — but see Coverage audit: design intent is not measured
+coverage.
 
 ## Timing & gates
 
@@ -118,6 +125,67 @@ added when needed.
    lifecycle owned out-of-band, e.g. time-window partitions dropped whole). **The spike
    must prototype the retention mechanism, not just the queries** — it is the likeliest
    operational failure point and must be proven before any integration decision.
+
+## Spike success rubric (LOCKED 2026-06-05 — amendable only via recorded ADR amendment, never at spike start)
+
+- **Query corpus (fixed):** 10 real investigation queries, written and committed to the
+  repo **before** Zenith is deployed, drawn from actual incident/debugging questions on
+  the target stack. Each query is classified per the Query taxonomy below; **only
+  span-content queries are scored.**
+- **Baseline (fixed):** SigNoz UI + ClickHouse SQL + OTel attribute filtering, same
+  operator, same data window, measured wall-clock to a *verified-correct* answer.
+- **Pass (fixed):** ≥7/10 scored queries are impossible in the baseline or ≥10× faster
+  to a correct answer in Zenith, AND no scored query is materially worse, AND the
+  retention prototype works (window-drop verified on real ingested data).
+- **Abandon (fixed):** anything below Pass; or setup+evaluation exceeds the 2-day
+  budget; or spike disk exceeds 20 GB; or the Coverage audit fails its threshold.
+- **Anti-loophole clause:** if the corpus, baseline, thresholds, or budgets change
+  after this ADR lands, the change must be a recorded amendment with justification —
+  defining the metric at spike start is explicitly forbidden.
+
+## Coverage audit (mandatory, before queries are scored)
+
+Measures whether the tee predicate's premise holds on real traffic:
+
+1. % of candidate traces carrying ≥1 contract token (target: ≥80%; below that the
+   predicate-only tee is insufficient and must be augmented before any integration).
+2. % of spans *within* token-bearing traces that carry the token (partial-trace
+   handling: define whether the tee keeps whole traces on any-span match — proposed —
+   or token-bearing spans only).
+3. Baggage vs span-attribute reliability compared per layer (HTTP, gRPC, SSE, MQTT,
+   webhooks); list the weakest propagation hops.
+4. ≥3 concrete false-exclusion examples examined: relevant incident traces the
+   predicate would have excluded, if any exist.
+
+## Retention contract (operational hard boundaries)
+
+- **Max retention window:** 7 days of filtered spans for the spike; 14 days if ever
+  integrated.
+- **Max disk:** 20 GB spike (hard abandon trigger); 50 GB integrated hard cap enforced
+  by window-drop.
+- **Re-warm expectation:** wipe ⇒ cold for historical data; anything older than the
+  window or pre-wipe is answered from SigNoz (system of record). Acceptable by design —
+  this is an investigation aid, not an audit record.
+- **Cleanup ownership:** the operator (Sachin), via a scheduled window-drop job that
+  runs *outside* Zenith (it must work when Zenith is wedged). If Zenith is down or
+  wedged, remediation is wipe + re-warm — never repair-in-place.
+- **Availability obligation: zero.** Cache down ⇒ investigations fall back to the
+  baseline. No paging, no SLO, no on-call surface.
+
+## Query taxonomy (prevents judging the tool against the wrong problem)
+
+Every corpus query is classified before scoring:
+
+- **Span-content** — answerable from trace/span content (names, attributes, events,
+  token joins). *The only category Zenith competes on.*
+- **Raw-log** — requires log-line search. Out of Zenith's scope (spans-only, verified);
+  these stay with the existing log path and score zero for Zenith *and* zero against it.
+- **Mixed** — needs both; scored only on the span-content portion.
+
+**Relevance check:** the corpus must record the natural distribution of real
+investigation questions. If >50% of them turn out to be raw-log-dependent, the span
+cache's value is marginal *regardless of query performance* — that finding alone
+triggers the abandon condition.
 
 ## Consequences
 
