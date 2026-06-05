@@ -18,6 +18,27 @@ Zenith is an alpha columnar DB purpose-built for agent traces: PAX segments sort
 `span_type`), JSONPath indexing over attributes, embedded Tantivy FTS, HNSW vector
 search, OTLP ingest endpoint, SQL/ZenithQL query.
 
+## Verified characteristics (config/proto level, 2026-06-05)
+
+Independent verification (Claude-chat deep-dive over Zenith's config and proto):
+
+- **It is an agent-trace search index, not a generic telemetry store.** FTS fields are
+  exactly `["prompt", "completion", "tool_io_text"]`; bitmaps on
+  `model`/`tool_name`/`status`/`span_type`/`provider`; JSONPath index over attributes;
+  HNSW vector search at 1536 dims. The cache role is the workload it was built for,
+  not a stretch.
+- **No retention/eviction for trace data — verified gap.** TTL exists only for
+  JWT/JWKS and compaction leases; GC removes only superseded (compacted) segments.
+  Nothing ages out actual trace data. Lifecycle must be owned out-of-band
+  (time-window partitions dropped whole, or periodic re-provision) and is the likeliest
+  operational bite.
+- **Spans-only — verified.** The proto has `span.proto`/`SpanIngestRequest` and
+  `query.proto`; there is no log record type. Logs are searchable only as span events;
+  raw log-line search stays in the existing stack.
+- **`trace_id` is the primary sort key**, so a cache hit carries the correlation ID
+  straight back to the full trace in the system of record — a search front-end, not a
+  parallel universe.
+
 Initial assessment dismissed it ("proprietary schema, alpha, adds nothing over
 OTel+Grafana"). That assessment evaluated the wrong role. The intended role is:
 
@@ -62,8 +83,19 @@ No always-on service before an integration decision.
   *span carries contract baggage*) to Zenith's OTLP endpoint; warm-forward retention
   (wipe = re-warm going forward, no backfill obligation); query surface for operator
   investigation and, later, trace-exemplar evidence in briefs.
-- **Out:** system-of-record duties; log-line search (spans-only — logs stay in the
-  existing stack); any write path from CHIPS core; backfill/replay machinery.
+- **Out:** system-of-record duties; log-line search (spans-only — verified above; logs
+  stay in the existing stack); any write path from CHIPS core; backfill/replay
+  machinery.
+- **Decided upfront — warm-forward-only, never backfillable.** Backfill would require a
+  replayable raw archive (bulk re-export from the primary store is awkward); for an
+  investigation aid rather than an audit record, warm-forward is sufficient and much
+  simpler. A wipe means the cache re-warms from new traffic only — accepted.
+- **Where the engineering actually lives: the tee/filter layer, not Zenith.** The
+  classic tail-sampling tension (too loose = a smaller Tempo at the same cost; too
+  tight = the incident trace isn't cached) is structurally reduced here because the
+  selection predicate is *property-based, not tail-based*: "span carries contract
+  baggage" is decidable at ingest. Spans without contract tokens are simply out of this
+  cache's scope by design.
 
 ## Approach
 
@@ -82,9 +114,10 @@ added when needed.
    that hypothesis is proven on target repos.
 3. OTel ingestion adapter exists (27_05 roadmap item 7) so trace evidence has a path
    into the brief evidence model.
-4. Retention/eviction design written (Zenith has none for trace data — TTL exists only
-   for JWT/JWKS and compaction leases; lifecycle must be owned out-of-band, e.g.
-   time-window partitions dropped whole).
+4. Retention/eviction design written (verified gap — see Verified characteristics;
+   lifecycle owned out-of-band, e.g. time-window partitions dropped whole). **The spike
+   must prototype the retention mechanism, not just the queries** — it is the likeliest
+   operational failure point and must be proven before any integration decision.
 
 ## Consequences
 
