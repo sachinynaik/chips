@@ -128,15 +128,24 @@ coverage.
 
 ## Spike success rubric (LOCKED 2026-06-05 — amendable only via recorded ADR amendment, never at spike start)
 
-- **Query corpus (fixed):** 10 real investigation queries, written and committed to the
-  repo **before** Zenith is deployed, drawn from actual incident/debugging questions on
-  the target stack. Each query is classified per the Query taxonomy below; **only
-  span-content queries are scored.**
+- **Query corpus (fixed, stratified):** minimum 10 real investigation queries, written
+  and committed to the repo **before** Zenith is deployed, drawn from actual
+  incident/debugging questions on the target stack. The corpus must be stratified so it
+  cannot be gamed with easy wins: **≥6 span-content queries, ≥2 mixed queries, ≥2
+  "hard" real-world incident/debug queries.** Each query is tagged per the Query
+  taxonomy below; only span-content material (whole queries, or the span-content
+  portion of mixed ones) is scored.
 - **Baseline (fixed):** SigNoz UI + ClickHouse SQL + OTel attribute filtering, same
-  operator, same data window, measured wall-clock to a *verified-correct* answer.
-- **Pass (fixed):** ≥7/10 scored queries are impossible in the baseline or ≥10× faster
-  to a correct answer in Zenith, AND no scored query is materially worse, AND the
-  retention prototype works (window-drop verified on real ingested data).
+  operator, same data window. Compared on **three dimensions**, not speed alone:
+  (a) wall-clock to a *verified-correct* answer, (b) **operator-step count** (clicks,
+  query rewrites, context switches), (c) success/failure of retrieving the needed span
+  evidence at all.
+- **Pass (fixed):** ≥7/10 scored queries are impossible in the baseline or ≥10×
+  faster/easier (time or steps) in Zenith, AND **no more than 1/10 is materially
+  worse** — materially worse = >2× slower, or more operator steps with no quality
+  gain — AND the retention prototype works (window-drop verified on real ingested
+  data). ("None worse" was rejected as brittle: one noisy low-value regression must
+  not kill an otherwise-decisive spike.)
 - **Abandon (fixed):** anything below Pass; or setup+evaluation exceeds the 2-day
   budget; or spike disk exceeds 20 GB; or the Coverage audit fails its threshold.
 - **Anti-loophole clause:** if the corpus, baseline, thresholds, or budgets change
@@ -160,7 +169,9 @@ Measures whether the tee predicate's premise holds on real traffic:
 ## Retention contract (operational hard boundaries)
 
 - **Max retention window:** 7 days of filtered spans for the spike; 14 days if ever
-  integrated.
+  integrated — **the 14d figure is provisional, not doctrine**: it stands only until
+  real usage data exists, then gets re-set from observed investigation-age
+  distribution.
 - **Max disk:** 20 GB spike (hard abandon trigger); 50 GB integrated hard cap enforced
   by window-drop.
 - **Re-warm expectation:** wipe ⇒ cold for historical data; anything older than the
