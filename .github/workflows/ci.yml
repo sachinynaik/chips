@@ -4,8 +4,11 @@
 # Make it a merge gate: repo Settings -> Branches -> require the `build` check.
 #
 # Faithful env via `uv sync` (uv.lock). Postgres provided as a service container;
-# the DB host differs between act (job runs in a container -> service name `postgres`)
-# and the self-hosted runner (-> localhost), so we resolve it at runtime.
+# the DB endpoint differs between act (job runs in a container -> service name
+# `postgres`, container port 5432) and the self-hosted runner (-> localhost via the
+# host-mapped port), so we resolve it at runtime. The host mapping is 55432, NOT
+# 5432: the runner's Docker host is shared (other projects own :5432) and probing
+# the default port could reach a foreign database.
 name: CI
 on:
   push:
@@ -30,7 +33,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
         ports:
-          - 5432:5432
+          - 55432:5432   # 55432: shared runner host; :5432 and :5499 are taken
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
@@ -51,18 +54,28 @@ jobs:
         run: |
           python3 - <<'PY'
           import os, socket
-          for host in ("postgres", "localhost", "127.0.0.1"):
+          # Only endpoints that can be OUR service container: the act network
+          # alias, or the deliberately non-default host-mapped port. Never probe
+          # localhost:5432 -- on the shared runner host that is someone else's DB.
+          candidates = (
+              ("postgres", 5432),
+              ("localhost", 55432),
+              ("127.0.0.1", 55432),
+          )
+          for host, port in candidates:
               try:
-                  socket.create_connection((host, 5432), timeout=3).close()
+                  socket.create_connection((host, port), timeout=3).close()
               except OSError:
                   continue
-              url = f"postgresql://postgres:postgres@{host}:5432/postgres"
+              url = f"postgresql://postgres:postgres@{host}:{port}/postgres"
               with open(os.environ["GITHUB_ENV"], "a") as fh:
                   fh.write(f"CHIPS_TEST_DB_URL={url}\n")
-              print("Postgres reachable at", host)
+              print(f"Postgres reachable at {host}:{port}")
               break
           else:
-              raise SystemExit("no Postgres service reachable on :5432")
+              raise SystemExit(
+                  "no Postgres service reachable (tried postgres:5432, localhost:55432)"
+              )
           PY
 
       - name: Migrate test DB to head
