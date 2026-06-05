@@ -16,8 +16,9 @@ popular, but pre-1.0 with API churn certain.
 
 **Watch.** Do not adopt now. A *live* VFS over mutable remote services is in tension
 with CHIPS's deterministic-snapshot ethos — anything entering the compile path must be
-snapshotted, not read live. CHIPS also has no current cross-service evidence-ingestion
-need.
+snapshotted, not read live. Bluntly: **mirage is irrelevant to CHIPS until a concrete
+cross-service evidence-ingestion requirement exists.** No such requirement exists or is
+planned; this ADR is a bookmark, not a backlog item.
 
 ## Purpose & fit (conditional)
 

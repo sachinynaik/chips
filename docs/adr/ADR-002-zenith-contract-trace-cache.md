@@ -1,7 +1,7 @@
 # ADR-002: Zenith as a Derived, Contract-Indexed Trace Cache
 
-**Date:** 2026-06-05
-**Status:** Proposed — deferred post-Foundation
+**Date:** 2026-06-05 (revised same day per Codex review)
+**Status:** Spike approved — integration undecided
 **Tool:** https://github.com/Polarityinc/zenith (ZenithDB, Rust, Apache-2.0, alpha v0.0.1)
 
 ## Context
@@ -27,9 +27,20 @@ OTel+Grafana"). That assessment evaluated the wrong role. The intended role is:
 
 ## Decision
 
-**Integrate, post-Foundation, strictly as a derived cache.** SigNoz (per ADR-001)
-remains the trace system of record. Zenith holds only a filtered, reconstructable
-subset; a format-breaking alpha upgrade means wipe + re-warm, never data loss.
+**Spike for possible integration — do not commit to integrate.** "Integrate" is too
+strong a decision for an alpha service whose central premise — that contract-token trace
+retrieval is a big enough problem that SigNoz + OTel/SQL filtering are insufficient —
+is unproven. The spike exists to prove or kill exactly that premise.
+
+If (and only if) the spike clears its success metric, integration follows the posture
+below: SigNoz (per ADR-001) remains the trace system of record; Zenith holds only a
+filtered, reconstructable subset; a format-breaking alpha upgrade means wipe + re-warm,
+never data loss.
+
+**Kill criteria** (also in the roadmap spike table): abandon if the query win over
+SigNoz + OTel/SQL filtering is marginal relative to operating another service; abandon
+unconditionally if the contract-lane thesis spike fails first. Time budget: 2 days.
+No always-on service before an integration decision.
 
 ## Purpose & fit
 
@@ -65,7 +76,10 @@ added when needed.
 ## Timing & gates
 
 1. Foundation tranche closes (slice 3 + cross-OS runner).
-2. Contract-lane thesis spike validates token-keyed retrieval (roadmap §Sequencing).
+2. Contract-lane thesis spike validates token-keyed retrieval (roadmap §Sequencing) —
+   the contract lane is a stack-specific retrieval *hypothesis*; this ADR's spike may
+   not proceed, and no infrastructure may be justified by the contract lane, before
+   that hypothesis is proven on target repos.
 3. OTel ingestion adapter exists (27_05 roadmap item 7) so trace evidence has a path
    into the brief evidence model.
 4. Retention/eviction design written (Zenith has none for trace data — TTL exists only

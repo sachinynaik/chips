@@ -1,7 +1,8 @@
 # ADR-003: zap for Operator-Loop Output Compaction
 
-**Date:** 2026-06-05
-**Status:** Proposed — spike approved in principle, schedule freely (off critical path)
+**Date:** 2026-06-05 (revised same day per Codex review)
+**Status:** Companion-tooling spike approved — explicitly NOT on the product roadmap
+critical path
 **Tool:** https://github.com/bitan-del/zap (Rust CLI, Apache-2.0, very young: 6 commits,
 solo author, no test suite/CI as of 2026-06-05)
 
@@ -46,6 +47,8 @@ it would not be acceptable for anything load-bearing.
 Anytime — it touches the operator loop only, so it can interleave with Foundation work
 without violating the Foundation-first rule. Gate for *adoption* (vs spike): measured
 savings with no observed information loss on the deterministic-path exclusion list.
+**Kill criterion:** abandon if it hides needed error detail even once on or near the
+exclusion list. Time budget: 0.5 day.
 
 ## Consequences
 

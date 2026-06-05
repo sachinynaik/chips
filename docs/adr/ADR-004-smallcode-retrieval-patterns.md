@@ -7,11 +7,11 @@ LLMs; MIT; 1.8k★, 13 contributors, 27 test files, active)
 
 ## Context
 
-smallcode is the closest external mirror of CHIPS's compiler core: hybrid BM25 + vector
-code search, symbol-aware chunking (snippets around functions/classes/types with
-sliding-window fallback), strict token-budgeted snippet injection, structured traces
-with `trace_id`/`span_id` per LLM call, and an agentic TDD harness with snapshot/rollback
-and loop detection. Its values (determinism, verification, budgets) align with CHIPS's.
+smallcode is another agent runtime — not a peer of CHIPS and not something to identify
+with — that happens to contain a few well-tested retrieval mechanisms: symbol-aware
+chunking (snippets around functions/classes/types with sliding-window fallback),
+token-budgeted snippet injection, and trace-to-test operator UX (`/trace`, `/eval`,
+`/budget`).
 
 ## Decision
 
@@ -21,25 +21,29 @@ stay away from. The retrieval/budget design, however, is read-before-build mater
 
 ## Purpose & fit
 
-Concrete pattern sources, mapped to CHIPS slices:
+The borrow list is **closed** — these three items and nothing else (no "borrow anything
+good we see"):
 
-- **Symbol-aware chunking + sliding-window fallback** → compare against CHIPS
-  tree-sitter structural retrieval defaults when next touching `structural.py`.
-- **"Combine scores then inject top bounded snippets"** → reference for rank/compress
-  boundary tuning (`_rank_and_assemble` / `_compress`).
-- **Trace-to-test and budget-surfacing operator UX** (`/trace`, `/eval`, `/budget`) →
-  reference for future CHIPS operator surfaces.
-- **Their hashed-vector shortcut is NOT a borrow** — CHIPS's pgvector embeddings are
-  strictly stronger; borrow the structure, not the embedding shortcut.
+1. **Symbol-aware chunking + sliding-window fallback** → compare against CHIPS
+   tree-sitter structural retrieval defaults.
+2. **Bounded-injection pattern** ("combine scores then inject top bounded snippets") →
+   reference for rank/compress boundary tuning.
+3. **Trace-to-test / operator UX ideas** (`/trace`, `/eval`, `/budget`) → reference for
+   future CHIPS operator surfaces.
+
+Explicitly not borrowed: their hashed-vector embedding shortcut (pgvector is strictly
+stronger) and everything else in the runtime.
 
 ## Scope
 
 Read `docs/rag-harness.md` and `test/hybrid_search.test.js` in their repo when building
 the related CHIPS slice. No code import, no dependency, no standalone work item.
+Impossibility test applies: if the compaction/chunking value is achievable without
+smallcode-inspired new machinery, the borrow stays a note.
 
 ## Timing & gates
 
-Opportunistic — activates only when a related slice is in flight.
+Only when touching `structural.py` or the rank/compress boundary — not "whenever."
 
 ## Consequences
 

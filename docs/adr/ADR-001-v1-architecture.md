@@ -1,8 +1,16 @@
 # ADR-001: CHIPS CORTEX V1 Architecture Decisions
 
 **Date:** 2026-05-12
-**Status:** Accepted
+**Status:** Accepted — **historical baseline** (marked 2026-06-05)
 **Scope:** V1 — Spacemate internal dogfood → open source
+
+> **Note (2026-06-05):** This ADR reflects the system as decided on 2026-05-12 and is
+> kept as the historical baseline. Parts are stale: single-tenant language predates the
+> later tenant work; observability assumptions have evolved (OpenInference span
+> registry, Prometheus metrics, Grafana consumer); and the Foundation tranche decisions
+> (decision log, policy_version, evidence architecture) live outside it. **Current
+> active authority:** `docs/02_06_execution_ledger.md` and later ADRs
+> (`ADR-002` onward).
 
 ---
 

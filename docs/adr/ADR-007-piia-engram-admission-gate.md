@@ -35,3 +35,11 @@ No standalone work item.
 
 - + Layer boundary stays clean: CHIPS never absorbs user-identity memory concerns.
 - − None (no dependency taken).
+
+## Standing warning
+
+CHIPS must **not** quietly drift into storing user-identity or preference memory under
+the banner of "helpfulness." The repo/task/policy/evidence boundary is a design
+invariant; anything user-identity-shaped belongs in user-owned tooling outside CHIPS.
+If a future feature appears to need it, that is a new ADR-level decision, not an
+incremental addition.

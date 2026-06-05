@@ -31,22 +31,19 @@ learning loops, not "we lack our own model."
 
 ## Decision
 
-**Reject HRM-Text as the vehicle.** The underlying ambition — a small *local* model
-that knows the codebase — stays on the books, re-vehicled as:
-
-> **Small pretrained code model + CHIPS-as-RAG.** A Qwen2.5-Coder-1.5B-class model
-> (or StarCoder2-3B) runs comfortably in 16GB, and CHIPS *is* the context compiler
-> meant to feed it. This is also a dogfooding loop: CHIPS compiles briefs for the local
-> model, decisions are logged, rewards eventually scored by the Phase-3 verifier.
-> Optional: light QLoRA for repo idioms on top.
+**Reject HRM-Text as the vehicle.** This ADR is a rejection record, not a design for a
+replacement. The underlying ambition — a small *local* model that knows the codebase —
+is deferred; the candidate direction noted for the trail is a small pretrained code
+model fed by CHIPS-as-RAG. Vehicle choice, serving stack, and evaluation design belong
+to a **future ADR if and when the ambition is picked up** — nothing here authorizes
+work on it.
 
 ## Timing & gates
 
-Deferred until after the Foundation tranche and the contract-lane work; requires its own
-ADR (vehicle choice, serving stack, evaluation design) when picked up.
+Deferred indefinitely; requires its own ADR when picked up.
 
 ## Consequences
 
 - + No spend on pretraining-scale infrastructure for a code-naive architecture.
-- + The copilot ambition becomes a CHIPS *consumer* — strengthening the learning loop
-  rather than competing with it for attention.
+- + The ambition's trail is preserved without smuggling speculative architecture into a
+  rejection record.
