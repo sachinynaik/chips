@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import pytest
 
+from chips.compiler.evidence import finding_evidence_id
 from chips.compiler.hypothesis import (
     ContractViolation,
     RankingWeights,
@@ -30,13 +31,24 @@ from chips.compiler.models import EvidenceBundle, EvidenceItem, Hypothesis
 
 def _con(eid: str, kind: str, **target) -> EvidenceItem:
     return EvidenceItem(
-        evidence_id=eid, kind="constraint", label=eid, text=eid, weight=1.0,
-        constraint_kind=kind, target=target,  # type: ignore[arg-type]
+        evidence_id=eid,
+        kind="constraint",
+        label=eid,
+        text=eid,
+        weight=1.0,
+        constraint_kind=kind,
+        target=target,  # type: ignore[arg-type]
     )
 
 
 def _ev(eid: str, kind: str, weight: float) -> EvidenceItem:
-    return EvidenceItem(evidence_id=eid, kind=kind, label=eid, text=eid, weight=weight)  # type: ignore[arg-type]
+    return EvidenceItem(
+        evidence_id=eid,
+        kind=kind,
+        label=eid,
+        text=eid,
+        weight=weight,
+    )  # type: ignore[arg-type]
 
 
 @pytest.fixture
@@ -58,17 +70,20 @@ def bundle() -> EvidenceBundle:
 
 
 def _h(hid="h1", cited=(), **kw) -> Hypothesis:
-    return Hypothesis(hypothesis_id=hid, claim="c", mechanism="m", cited_evidence=list(cited), **kw)
+    return Hypothesis(
+        hypothesis_id=hid,
+        claim="c",
+        mechanism="m",
+        cited_evidence=list(cited),
+        **kw,
+    )
 
-
-# ── coverage ───────────────────────────────────────────────────────────────
 
 def test_coverage_sums_unique_valid_cited_weights(bundle):
     assert coverage(_h(cited=["mem:1", "diff:abc"]), bundle) == 5.0
 
 
 def test_coverage_counts_duplicate_citation_once(bundle):
-    # mem:1 cited twice must not double-count (anti-gaming)
     assert coverage(_h(cited=["mem:1", "mem:1", "diff:abc"]), bundle) == 5.0
 
 
@@ -76,15 +91,11 @@ def test_coverage_excludes_unknown_cited_ids(bundle):
     assert coverage(_h(cited=["mem:1", "ghost:1"]), bundle) == 2.0
 
 
-# ── corroboration ────────────────────────────────────────────────────────────
-
 def test_corroboration_is_unique_kinds_minus_one(bundle):
-    # memory + diff + finding = 3 distinct kinds → 2
     assert corroboration(_h(cited=["mem:1", "diff:abc", "find:xyz"]), bundle) == 2
 
 
 def test_corroboration_dedups_kinds(bundle):
-    # two memory items → 1 distinct kind → 0
     assert corroboration(_h(cited=["mem:1", "mem:2"]), bundle) == 0
 
 
@@ -92,14 +103,12 @@ def test_corroboration_floored_at_zero_for_no_valid_evidence(bundle):
     assert corroboration(_h(cited=["ghost:1"]), bundle) == 0
 
 
-# ── contradiction (structural) ───────────────────────────────────────────────
-
 def test_contradiction_matches_forbidden_target_path(bundle):
-    assert contradiction(_h(touched_paths=["pay.py"]), bundle) == 1  # con:1 only (con:3 is known_issue)
+    assert contradiction(_h(touched_paths=["pay.py"]), bundle) == 1
 
 
 def test_contradiction_matches_invariant_target_symbol(bundle):
-    assert contradiction(_h(touched_symbols=["Cart.add"]), bundle) == 1  # con:2
+    assert contradiction(_h(touched_symbols=["Cart.add"]), bundle) == 1
 
 
 def test_contradiction_matches_declared_violation(bundle):
@@ -107,14 +116,15 @@ def test_contradiction_matches_declared_violation(bundle):
 
 
 def test_contradiction_ignores_known_issue(bundle):
-    # con:3 is known_issue on pay.py — touching pay.py must NOT count it
     assert contradiction(_h(touched_paths=["pay.py"]), bundle) == 1
 
 
 def test_contradiction_counts_distinct_constraints_once(bundle):
-    # both touched_paths AND declared_violations point at con:1 → counted once;
-    # plus con:2 via symbol → total 2 distinct
-    h = _h(touched_paths=["pay.py"], declared_violations=["con:1"], touched_symbols=["Cart.add"])
+    h = _h(
+        touched_paths=["pay.py"],
+        declared_violations=["con:1"],
+        touched_symbols=["Cart.add"],
+    )
     assert contradiction(h, bundle) == 2
 
 
@@ -122,15 +132,12 @@ def test_contradiction_zero_when_nothing_matches(bundle):
     assert contradiction(_h(touched_paths=["other.py"]), bundle) == 0
 
 
-# ── contract validation ──────────────────────────────────────────────────────
-
 def test_validate_flags_unknown_cited_id(bundle):
     violations = validate_hypothesis(_h(cited=["mem:1", "ghost:1"]), bundle)
     assert any(v.kind == "unknown_evidence_id" and "ghost:1" in v.detail for v in violations)
 
 
 def test_validate_flags_declared_violation_that_is_not_a_constraint(bundle):
-    # mem:1 exists but is evidence, not a constraint
     violations = validate_hypothesis(_h(declared_violations=["mem:1"]), bundle)
     assert any(v.kind == "declared_violation_not_constraint" for v in violations)
 
@@ -144,24 +151,23 @@ def test_validate_clean_hypothesis_has_no_violations(bundle):
     assert validate_hypothesis(_h(cited=["mem:1"], declared_violations=["con:1"]), bundle) == []
 
 
-# ── score ────────────────────────────────────────────────────────────────────
-
 def test_score_uses_default_weights(bundle):
-    # cited mem:1(2)+diff:abc(3)+find:xyz(4)=9 cov; kinds 3 → corro 2; touch pay.py → con 1
     h = _h(cited=["mem:1", "diff:abc", "find:xyz"], touched_paths=["pay.py"])
     s = score_hypothesis(h, bundle)
     assert s.coverage == 9.0
     assert s.contradiction == 1
     assert s.corroboration == 2
     assert s.proximity == 0.0
-    # 1.0*9 - 2.0*1 + 0.25*2 + 0 = 7.5
     assert s.score == pytest.approx(7.5)
 
 
 def test_score_honors_custom_weights(bundle):
     h = _h(cited=["mem:1"], touched_paths=["pay.py"])
-    s = score_hypothesis(h, bundle, RankingWeights(w_cov=1.0, w_con=10.0, w_div=0.0, w_prox=0.0))
-    # 1*2 - 10*1 = -8
+    s = score_hypothesis(
+        h,
+        bundle,
+        RankingWeights(w_cov=1.0, w_con=10.0, w_div=0.0, w_prox=0.0),
+    )
     assert s.score == pytest.approx(-8.0)
 
 
@@ -170,17 +176,35 @@ def test_score_attaches_contract_violations(bundle):
     assert any(isinstance(v, ContractViolation) for v in s.violations)
 
 
-# ── ranking + tie-breaks ─────────────────────────────────────────────────────
+def test_real_fragility_finding_id_scores_as_valid_evidence():
+    fragility_id = finding_evidence_id(
+        {
+            "kind": "fragility",
+            "matched_commits": ["abc123", "def456"],
+            "reason": "history_found",
+        }
+    )
+    fragility_bundle = EvidenceBundle(
+        bundle_id=uuid4(),
+        constraints=[],
+        evidence=[_ev(fragility_id, "finding", 4.0)],
+    )
+
+    s = score_hypothesis(_h(cited=[fragility_id]), fragility_bundle)
+
+    assert s.coverage == 4.0
+    assert s.corroboration == 0
+    assert s.violations == []
+
 
 def test_rank_orders_by_score_descending(bundle):
-    hi = _h("hi", cited=["mem:1", "mem:2", "diff:abc", "find:xyz"])  # cov 10, corro 2 → 10.5
-    lo = _h("lo", cited=["mem:1"])  # cov 2 → 2.0
+    hi = _h("hi", cited=["mem:1", "mem:2", "diff:abc", "find:xyz"])
+    lo = _h("lo", cited=["mem:1"])
     ranked = rank_hypotheses([lo, hi], bundle)
     assert [r.hypothesis_id for r in ranked] == ["hi", "lo"]
 
 
 def test_rank_tiebreak_prefers_higher_coverage_on_equal_score(bundle):
-    # ha: cov 2, con 0 → 2.0 ; hc: cov 4, con 1 → 4 - 2 = 2.0 (equal score, higher coverage)
     ha = _h("ha", cited=["mem:1"])
     hc = _h("hc", cited=["find:xyz"], touched_paths=["pay.py"])
     ranked = rank_hypotheses([ha, hc], bundle)
@@ -195,7 +219,7 @@ def test_rank_tiebreak_is_lexicographic_id_when_fully_tied(bundle):
 
 
 def test_rank_hint_is_advisory_and_never_scored(bundle):
-    persuasive = _h("persuasive", cited=["mem:1"], rank_hint=0.99)  # cov 2 → 2.0
-    grounded = _h("grounded", cited=["find:xyz"], rank_hint=0.01)  # cov 4 → 4.0
+    persuasive = _h("persuasive", cited=["mem:1"], rank_hint=0.99)
+    grounded = _h("grounded", cited=["find:xyz"], rank_hint=0.01)
     ranked = rank_hypotheses([persuasive, grounded], bundle)
     assert [r.hypothesis_id for r in ranked] == ["grounded", "persuasive"]
