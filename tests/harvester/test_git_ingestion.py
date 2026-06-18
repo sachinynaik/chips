@@ -82,3 +82,45 @@ def test_ingest_updates_file_signals(conn):
     ).fetchone()
     assert row is not None
     assert row[0] > 0
+
+
+def test_ingest_captures_raw_defect_corpus_evidence(conn):
+    ingestion = GitIngestion(conn)
+    commit = CommitRecord(
+        sha="abc008",
+        author="test",
+        committed_at="2026-05-10T12:00:00+00:00",
+        message="hotfix(auth): resolve incident ABC-123 closes #77",
+        files_changed=["src/auth.py"],
+    )
+
+    ingestion.ingest_commits([commit])
+
+    row = conn.execute(
+        "SELECT issue_refs, has_hotfix_keyword, has_incident_keyword, revert_of_sha "
+        "FROM cortex_defect_corpus WHERE sha = 'abc008'"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == ["#77", "ABC-123"]
+    assert row[1] is True
+    assert row[2] is True
+    assert row[3] is None
+
+
+def test_ingest_captures_revert_linkage_for_defect_corpus(conn):
+    ingestion = GitIngestion(conn)
+    commit = CommitRecord(
+        sha="abc009",
+        author="test",
+        committed_at="2026-05-10T12:00:00+00:00",
+        message='Revert "break auth"\n\nThis reverts commit 0123456789abcdef0123456789abcdef01234567.',
+        files_changed=["src/auth.py"],
+    )
+
+    ingestion.ingest_commits([commit])
+
+    row = conn.execute(
+        "SELECT revert_of_sha FROM cortex_defect_corpus WHERE sha = 'abc009'"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "0123456789abcdef0123456789abcdef01234567"

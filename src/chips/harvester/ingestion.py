@@ -1,6 +1,7 @@
 from __future__ import annotations
 import psycopg
 
+from chips.harvester.defect_corpus import extract_defect_evidence
 from chips.harvester.git_reader import CommitRecord, GitReader
 
 
@@ -12,6 +13,7 @@ class GitIngestion:
         if not commits:
             return
         self._upsert_commits(commits)
+        self._upsert_defect_corpus(commits)
         self._upsert_cochange_pairs(commits)
         self._upsert_file_signals(commits)
 
@@ -47,6 +49,43 @@ class GitIngestion:
                     last_seen_at = now()
                 """,
                 (file_a, file_b, freq),
+            )
+
+    def _upsert_defect_corpus(self, commits: list[CommitRecord]) -> None:
+        for commit in commits:
+            evidence = extract_defect_evidence(commit.message)
+            self._conn.execute(
+                """
+                INSERT INTO cortex_defect_corpus (
+                    sha,
+                    issue_refs,
+                    revert_of_sha,
+                    has_bug_keyword,
+                    has_defect_keyword,
+                    has_hotfix_keyword,
+                    has_incident_keyword,
+                    captured_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT (sha)
+                DO UPDATE SET
+                    issue_refs = EXCLUDED.issue_refs,
+                    revert_of_sha = EXCLUDED.revert_of_sha,
+                    has_bug_keyword = EXCLUDED.has_bug_keyword,
+                    has_defect_keyword = EXCLUDED.has_defect_keyword,
+                    has_hotfix_keyword = EXCLUDED.has_hotfix_keyword,
+                    has_incident_keyword = EXCLUDED.has_incident_keyword,
+                    captured_at = now()
+                """,
+                (
+                    commit.sha,
+                    evidence.issue_refs,
+                    evidence.revert_of_sha,
+                    evidence.has_bug_keyword,
+                    evidence.has_defect_keyword,
+                    evidence.has_hotfix_keyword,
+                    evidence.has_incident_keyword,
+                ),
             )
 
     def _upsert_file_signals(self, commits: list[CommitRecord]) -> None:
