@@ -61,14 +61,23 @@ def rank_signals(
 
     for sig in file_signals:
         churn = float(sig.get("churn_score") or 0.0)
+        cochange_entropy = float(sig.get("cochange_entropy") or 0.0)
+        defect_history_count = int(sig.get("defect_history_count") or 0)
+        fragility = float(sig.get("fragility") or churn)
         recency = _recency_score(sig.get("last_changed_at"), now)
-        raw = _W_CHURN * churn + _W_RECENCY * recency
+        raw = _W_CHURN * fragility + _W_RECENCY * recency
         score = min(raw / (_W_CHURN + _W_RECENCY), 1.0)
         ranked.append(RankedSignal(
             item_id=sig["file_path"],
             item_type="file",
             score=score,
-            signal_breakdown={"churn": churn, "recency": recency},
+            signal_breakdown={
+                "churn": churn,
+                "cochange_entropy": cochange_entropy,
+                "defect_history_count": defect_history_count,
+                "fragility": fragility,
+                "recency": recency,
+            },
         ))
 
     for diff in (diffs or []):

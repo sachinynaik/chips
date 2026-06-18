@@ -115,7 +115,15 @@ def _build_capturing_soft_items(files=None, file_signals_result=None):
 
 
 def test_file_signal_injected_as_soft_item():
-    signal = {"file_path": "src/auth.py", "churn_score": 3.0, "failure_count": 2, "last_changed_at": None}
+    signal = {
+        "file_path": "src/auth.py",
+        "churn_score": 3.0,
+        "cochange_entropy": 0.4,
+        "defect_history_count": 2,
+        "fragility": 0.73,
+        "failure_count": 2,
+        "last_changed_at": None,
+    }
     _brief, soft_items = _build_capturing_soft_items(
         files=["src/auth.py"], file_signals_result=[signal]
     )
@@ -123,11 +131,20 @@ def test_file_signal_injected_as_soft_item():
     assert len(file_items) == 1
     assert file_items[0].item_id == "src/auth.py"
     assert "src/auth.py" in file_items[0].text
+    assert "fragility=0.73" in file_items[0].text
 
 
 def test_file_soft_item_carries_ranked_score():
     """The injected soft item reuses the ranker's score for this file_path."""
-    signal = {"file_path": "src/auth.py", "churn_score": 3.0, "failure_count": 2, "last_changed_at": None}
+    signal = {
+        "file_path": "src/auth.py",
+        "churn_score": 3.0,
+        "cochange_entropy": 0.4,
+        "defect_history_count": 2,
+        "fragility": 0.73,
+        "failure_count": 2,
+        "last_changed_at": None,
+    }
     brief, soft_items = _build_capturing_soft_items(
         files=["src/auth.py"], file_signals_result=[signal]
     )
@@ -140,8 +157,8 @@ def test_file_soft_item_carries_ranked_score():
 
 def test_multiple_file_signals_each_injected():
     signals = [
-        {"file_path": "src/a.py", "churn_score": 1.0, "failure_count": 0, "last_changed_at": None},
-        {"file_path": "src/b.py", "churn_score": 5.0, "failure_count": 3, "last_changed_at": None},
+        {"file_path": "src/a.py", "churn_score": 1.0, "cochange_entropy": 0.0, "defect_history_count": 0, "fragility": 0.1, "failure_count": 0, "last_changed_at": None},
+        {"file_path": "src/b.py", "churn_score": 5.0, "cochange_entropy": 0.6, "defect_history_count": 2, "fragility": 0.9, "failure_count": 3, "last_changed_at": None},
     ]
     _brief, soft_items = _build_capturing_soft_items(
         files=["src/a.py", "src/b.py"], file_signals_result=signals

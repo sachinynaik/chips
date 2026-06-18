@@ -517,6 +517,7 @@ class BriefBuilder:
                     category="file",
                     text=(
                         f"File {file_path}: churn={sig.get('churn_score')}, "
+                        f"fragility={sig.get('fragility')}, "
                         f"failures={sig.get('failure_count')}"
                     ),
                     score=score_by_id.get(file_path, 0.0),

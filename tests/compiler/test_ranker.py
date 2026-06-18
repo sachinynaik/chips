@@ -11,7 +11,15 @@ def _memory(id: str, similarity: float, type: str = "lesson") -> dict:
 
 def _file_signal(path: str, churn: float, days_old: int) -> dict:
     last_changed = datetime.now(timezone.utc) - timedelta(days=days_old)
-    return {"file_path": path, "churn_score": churn, "failure_count": 0, "last_changed_at": last_changed}
+    return {
+        "file_path": path,
+        "churn_score": churn,
+        "cochange_entropy": 0.0,
+        "defect_history_count": 0,
+        "fragility": churn,
+        "failure_count": 0,
+        "last_changed_at": last_changed,
+    }
 
 
 def test_rank_returns_sorted_descending():
@@ -56,6 +64,28 @@ def test_recent_file_scores_higher_than_old():
     old = _file_signal("old.py", 0.5, 180)
     ranked = rank_signals([], [recent, old])
     assert ranked[0].item_id == "new.py"
+
+
+def test_file_rank_uses_fragility_in_breakdown():
+    signal = _file_signal("fragile.py", 0.3, 5)
+    signal["cochange_entropy"] = 0.6
+    signal["defect_history_count"] = 2
+    signal["fragility"] = 0.73
+    ranked = rank_signals([], [signal])
+    file_signal = next(r for r in ranked if r.item_type == "file")
+    assert file_signal.signal_breakdown["fragility"] == 0.73
+    assert file_signal.signal_breakdown["cochange_entropy"] == 0.6
+    assert file_signal.signal_breakdown["defect_history_count"] == 2
+
+
+def test_more_fragile_file_scores_higher_when_recency_equal():
+    less_fragile = _file_signal("less.py", 0.3, 5)
+    less_fragile["fragility"] = 0.2
+    more_fragile = _file_signal("more.py", 0.3, 5)
+    more_fragile["fragility"] = 0.8
+    ranked = rank_signals([], [less_fragile, more_fragile])
+    file_items = [r for r in ranked if r.item_type == "file"]
+    assert file_items[0].item_id == "more.py"
 
 
 # ── Diff ranking ──────────────────────────────────────────────────────────────
