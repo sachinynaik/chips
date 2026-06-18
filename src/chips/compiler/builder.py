@@ -81,6 +81,12 @@ def _normalized_finding(kind: str, item: dict) -> dict:
     if kind == "type_errors":
         return {"kind": kind, "code": item.get("code", ""), "line": item.get("line", "?"),
                 "message": item.get("message", "")}
+    if kind == "fragility":
+        return {
+            "kind": kind,
+            "matched_commits": sorted(item.get("matched_commits", [])),
+            "reason": item.get("reason", ""),
+        }
     # uncovered_changes is handled inline (its identity is the path string, not a dict).
     return {"kind": kind, **item}
 
@@ -115,7 +121,7 @@ def _extract_brief_signals(
     hard_additions: HIGH/MEDIUM security findings, architecture violations (plain text —
         these become ``hard_constraints``, not citable evidence, so they carry no ID).
     soft_additions: ``(find_id, text)`` pairs for dead code, API surface issues, clones,
-        type errors, uncovered changes, and LOW security findings. The ID is the stable
+        type errors, fragility, uncovered changes, and LOW security findings. The ID is the stable
         ``find:<content-hash>`` (contract §A), replacing the old positional ``finding:{i}``.
 
     structured_findings schema (produced by chips.harvester.findings.extract_findings):
@@ -127,6 +133,7 @@ def _extract_brief_signals(
       type_errors: list[dict]
       semgrep: list[dict]
       ownership: dict
+      fragility: dict
       uncovered_changes: dict[path, {changed_lines_missing, changed_lines_coverage_pct}]
     """
     hard_additions: list[str] = []
@@ -191,6 +198,18 @@ def _extract_brief_signals(
             message = item.get("message", "")
             soft_additions.append(_soft(
                 "type_errors", item, f"Type error [{code}] line {line}: {message}",
+            ))
+
+        # Fragility → soft
+        fragility = findings.get("fragility")
+        if fragility:
+            history_count = fragility.get("history_count", 0)
+            matched_commits = sorted(fragility.get("matched_commits", []))
+            commit_text = ", ".join(matched_commits) if matched_commits else "no linked commits"
+            soft_additions.append(_soft(
+                "fragility",
+                fragility,
+                f"Fragility: {history_count} prior defect-linked fixes touch this area ({commit_text})",
             ))
 
         # Uncovered changes: dict[path → info] → soft. Identity is the path string, so

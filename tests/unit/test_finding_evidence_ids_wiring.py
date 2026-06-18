@@ -90,6 +90,22 @@ def test_different_kinds_do_not_collide():
     assert soft_dead[0][0] != soft_typ[0][0]
 
 
+def test_fragility_id_is_commit_order_independent():
+    a = {"fragility": {"history_count": 2, "matched_commits": ["def456", "abc123"], "reason": "history_found"}}
+    b = {"fragility": {"history_count": 2, "matched_commits": ["abc123", "def456"], "reason": "history_found"}}
+
+    _h1, soft_a = _extract_brief_signals([_mem(a)])
+    _h2, soft_b = _extract_brief_signals([_mem(b)])
+
+    assert soft_a[0][0] == soft_b[0][0]
+    expected = finding_evidence_id({
+        "kind": "fragility",
+        "matched_commits": ["abc123", "def456"],
+        "reason": "history_found",
+    })
+    assert soft_a[0][0] == expected
+
+
 def test_uncovered_changes_keyed_on_path():
     findings = {"uncovered_changes": {
         "src/chips/memory/repository.py": {"changed_lines_missing": 7, "changed_lines_coverage_pct": 0.0}

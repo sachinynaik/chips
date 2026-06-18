@@ -135,6 +135,21 @@ def test_type_error_goes_to_soft():
     assert "incompatible types" in soft[0][1]
 
 
+def test_fragility_goes_to_soft():
+    findings = {"fragility": {
+        "history_count": 2,
+        "matched_commits": ["def456", "abc123"],
+        "reason": "history_found",
+    }}
+    hard, soft = _extract_brief_signals([_mem(findings)])
+
+    assert hard == []
+    assert len(soft) == 1
+    assert "2 prior defect-linked fixes" in soft[0][1]
+    assert "abc123" in soft[0][1]
+    assert "def456" in soft[0][1]
+
+
 def test_uncovered_changes_goes_to_soft():
     # uncovered_changes is a dict[path → info], not a list
     findings = {"uncovered_changes": {
