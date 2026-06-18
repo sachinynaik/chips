@@ -101,3 +101,13 @@ def test_build_prompt_includes_low_coverage_warning():
     summarizer = DiffSummarizer("http://localhost:11434", "qwen2.5-coder")
     prompt = summarizer._build_prompt(_commit(), enrichment)
     assert "35%" in prompt or "annotation" in prompt.lower()
+
+
+def test_build_prompt_includes_defect_history_when_present():
+    enrichment = _enrichment(
+        defect_risk={"risk_score": None, "reason": "history_found", "history_count": 2, "matched_commits": ["abc111", "abc222"]}
+    )
+    summarizer = DiffSummarizer("http://localhost:11434", "qwen2.5-coder")
+    prompt = summarizer._build_prompt(_commit(), enrichment)
+    assert "Prior defect-linked changes" in prompt
+    assert "abc111" in prompt

@@ -62,6 +62,14 @@ class DiffSummarizer:
             )
             parts.append(f"Files that frequently change together: {pairs_text}")
 
+        defect_history_count = enrichment.defect_risk.get("history_count", 0)
+        if defect_history_count:
+            commits = ", ".join(enrichment.defect_risk.get("matched_commits", [])[:3])
+            detail = f" ({commits})" if commits else ""
+            parts.append(
+                f"Prior defect-linked changes in this area: {defect_history_count}{detail}"
+            )
+
         if enrichment.type_errors:
             error_lines = "; ".join(
                 f"{e.get('code', '?')} at line {e.get('line', '?')}: {e.get('message', '')}"

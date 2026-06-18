@@ -18,3 +18,9 @@ def test_defect_predictor_returns_stub_with_null_risk():
 def test_defect_predictor_returns_reason():
     result = DefectPredictor().predict("some diff", "fix bug")
     assert "insufficient_history" in result["reason"]
+
+
+def test_defect_predictor_returns_zero_history_without_db_context():
+    result = DefectPredictor().predict("some diff", "fix bug")
+    assert result["history_count"] == 0
+    assert result["matched_commits"] == []

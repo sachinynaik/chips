@@ -74,6 +74,7 @@ def test_pipeline_community_context_populated():
 def test_pipeline_defect_risk_is_stub():
     result = _pipeline().enrich(_commit(), "auth")
     assert result.defect_risk["risk_score"] is None
+    assert result.defect_risk["history_count"] == 0
 
 def test_pipeline_refactoring_type_is_none():
     result = _pipeline().enrich(_commit(), "auth")
@@ -91,6 +92,27 @@ def test_pipeline_skips_db_when_no_conn_factory():
     result = pipeline.enrich(_commit(), "auth")
     assert result.scope_memories == []
     assert result.cochange_pairs == []
+    assert result.defect_risk["reason"] == "insufficient_history"
+
+
+def test_pipeline_defect_risk_uses_db_history_when_conn_factory_provided():
+    conn = MagicMock()
+
+    def execute(sql, params):
+        cursor = MagicMock()
+        if "FROM cortex_git_commits" in sql and "cortex_defect_corpus" in sql:
+            cursor.fetchall.return_value = [("abc111",), ("abc222",)]
+        else:
+            cursor.fetchall.return_value = []
+        return cursor
+
+    conn.execute.side_effect = execute
+    pipeline = _pipeline(conn_factory=lambda: conn)
+
+    result = pipeline.enrich(_commit(), "auth")
+
+    assert result.defect_risk["history_count"] == 2
+    assert result.defect_risk["matched_commits"] == ["abc111", "abc222"]
 
 
 # ── TypeChecker integration ───────────────────────────────────────────────────

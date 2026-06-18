@@ -142,6 +142,12 @@ class EnrichmentPipeline:
         if self._conn_factory is not None:
             conn = self._conn_factory()
             try:
+                defect_risk = self._defect.predict(
+                    diff_content,
+                    commit.message,
+                    conn=conn,
+                    files_changed=commit.files_changed,
+                )
                 scope_memories = self._scope_memories.fetch(conn, scope)
                 cochange_pairs = self._cochange.fetch(conn, commit.files_changed)
             finally:
