@@ -17,7 +17,7 @@ def _conn(file_rows=None, cochange_rows=None):
     return conn
 
 
-_FILE_ROW = ("src/test_auth.py", 0.8, 0.4, 2)
+_FILE_ROW = ("src/test_auth.py", 0.8, 0.4, 2, 2)
 _COCHANGE_ROW = ("src/test_auth.py", "src/auth.py", 5)
 
 
@@ -63,7 +63,7 @@ def test_empty_db_returns_empty_lists():
 def test_test_file_has_expected_keys():
     result = get_test_context(_conn(file_rows=[_FILE_ROW]))
     f = result["test_files"][0]
-    for key in ("file_path", "churn_score", "cochange_entropy", "failure_count"):
+    for key in ("file_path", "churn_score", "cochange_entropy", "defect_history_count", "fragility", "failure_count"):
         assert key in f, f"missing key: {key}"
 
 
@@ -85,6 +85,16 @@ def test_test_file_failure_count_correct():
 def test_test_file_cochange_entropy_correct():
     result = get_test_context(_conn(file_rows=[_FILE_ROW]))
     assert result["test_files"][0]["cochange_entropy"] == 0.4
+
+
+def test_test_file_defect_history_count_correct():
+    result = get_test_context(_conn(file_rows=[_FILE_ROW]))
+    assert result["test_files"][0]["defect_history_count"] == 2
+
+
+def test_test_file_fragility_correct():
+    result = get_test_context(_conn(file_rows=[_FILE_ROW]))
+    assert result["test_files"][0]["fragility"] == 0.65
 
 
 # ---------------------------------------------------------------------------

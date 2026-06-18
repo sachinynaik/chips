@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import psycopg
 
+from chips.compiler.retrieval import _fragility_score
+
 
 def get_test_context(
     conn: psycopg.Connection,
@@ -24,7 +26,23 @@ def get_test_context(
 
     file_rows = conn.execute(
         f"""
-        SELECT file_path, churn_score, cochange_entropy, failure_count
+        SELECT
+            file_path,
+            churn_score,
+            cochange_entropy,
+            (
+                SELECT COUNT(DISTINCT g.sha)
+                FROM cortex_git_commits g
+                JOIN cortex_defect_corpus d ON d.sha = g.sha
+                WHERE g.files_changed && ARRAY[cortex_file_signals.file_path]
+                  AND (
+                    cardinality(d.issue_refs) > 0
+                    OR d.revert_of_sha IS NOT NULL
+                    OR d.has_hotfix_keyword = TRUE
+                    OR d.has_incident_keyword = TRUE
+                  )
+            ) AS defect_history_count,
+            failure_count
         FROM cortex_file_signals
         WHERE {' AND '.join(file_conditions)}
         ORDER BY churn_score DESC
@@ -59,9 +77,11 @@ def get_test_context(
                 "file_path": file_path,
                 "churn_score": churn_score,
                 "cochange_entropy": cochange_entropy,
+                "defect_history_count": defect_history_count,
+                "fragility": _fragility_score(churn_score, cochange_entropy, defect_history_count),
                 "failure_count": failure_count,
             }
-            for file_path, churn_score, cochange_entropy, failure_count in file_rows
+            for file_path, churn_score, cochange_entropy, defect_history_count, failure_count in file_rows
         ],
         "cochange_pairs": [
             {"file_a": a, "file_b": b, "frequency": freq}
