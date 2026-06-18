@@ -170,3 +170,35 @@ def test_multiple_file_signals_each_injected():
 def test_no_file_soft_items_when_no_signals():
     _brief, soft_items = _build_capturing_soft_items(files=["src/auth.py"], file_signals_result=[])
     assert [s for s in soft_items if s.category == "file"] == []
+
+
+def test_fragility_memory_finding_reaches_evidence_bundle():
+    builder = _make_builder()
+    memory = {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "type": "lesson",
+        "content": "auth code has prior incidents",
+        "confidence": 0.8,
+        "structured_findings": {
+            "fragility": {
+                "history_count": 2,
+                "matched_commits": ["def456", "abc123"],
+                "reason": "history_found",
+            }
+        },
+    }
+
+    with (
+        patch("chips.compiler.builder.retrieve_memories", return_value=[memory]),
+        patch("chips.compiler.builder.retrieve_diffs", return_value=[]),
+        patch("chips.compiler.builder.retrieve_file_signals", return_value=[]),
+        patch.object(BriefBuilder, "_persist"),
+    ):
+        brief = builder.build("fix crash", files=["src/auth.py"])
+
+    finding_items = [e for e in brief.evidence_bundle.evidence if e.kind == "finding"]
+    assert len(finding_items) == 1
+    assert finding_items[0].evidence_id.startswith("find:")
+    assert "2 prior defect-linked fixes" in finding_items[0].text
+    assert "abc123" in finding_items[0].text
+    assert "def456" in finding_items[0].text
