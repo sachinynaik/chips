@@ -89,6 +89,19 @@ def extract_findings(enrichment: EnrichmentResult) -> dict:
         result["semgrep"] = enrichment.semgrep_findings[:10]
 
     # ------------------------------------------------------------------
+    # defect_risk → "fragility"
+    # Only when prior defect-linked history exists.
+    # Store only compact evidence useful for later retrieval.
+    # ------------------------------------------------------------------
+    defect_risk = enrichment.defect_risk
+    if defect_risk and defect_risk.get("history_count", 0) > 0:
+        result["fragility"] = {
+            "history_count": defect_risk.get("history_count", 0),
+            "matched_commits": defect_risk.get("matched_commits", []),
+            "reason": defect_risk.get("reason"),
+        }
+
+    # ------------------------------------------------------------------
     # line_coverage → "uncovered_changes"
     # Only when coverage_available == True.
     # Only files where changed_lines_coverage_pct == 0.0 (and not None).

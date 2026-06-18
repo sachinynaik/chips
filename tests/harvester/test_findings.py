@@ -412,3 +412,35 @@ def test_excluded_fields_not_in_result():
                 "cpg_findings", "defect_risk", "type_coverage",
                 "type_checker_backend"):
         assert key not in result, f"Excluded key '{key}' found in result"
+
+
+def test_defect_risk_projects_into_compact_fragility_finding():
+    e = EnrichmentResult(
+        defect_risk={
+            "risk_score": None,
+            "history_count": 2,
+            "matched_commits": ["abc123", "def456"],
+            "reason": "history_found",
+        }
+    )
+
+    result = extract_findings(e)
+
+    assert result["fragility"] == {
+        "history_count": 2,
+        "matched_commits": ["abc123", "def456"],
+        "reason": "history_found",
+    }
+
+
+def test_defect_risk_without_history_does_not_emit_fragility_finding():
+    e = EnrichmentResult(
+        defect_risk={
+            "risk_score": None,
+            "history_count": 0,
+            "matched_commits": [],
+            "reason": "no_prior_defects",
+        }
+    )
+
+    assert "fragility" not in extract_findings(e)

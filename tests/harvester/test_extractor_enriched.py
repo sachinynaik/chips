@@ -72,12 +72,23 @@ def test_extract_with_enricher_structured_findings_populated():
             "message": "shell=True",
             "file": "f.py",
             "test_name": "shell",
-        }]
+        }],
+        defect_risk={
+            "risk_score": None,
+            "history_count": 2,
+            "matched_commits": ["abc123", "def456"],
+            "reason": "history_found",
+        },
     )
     summarizer = MagicMock(spec=DiffSummarizer)
     summarizer.summarize.return_value = "enriched"
     record = CommitMemoryExtractor(enricher=enricher, summarizer=summarizer).extract(_commit())
     assert len(record.structured_findings["security"]) == 1
+    assert record.structured_findings["fragility"] == {
+        "history_count": 2,
+        "matched_commits": ["abc123", "def456"],
+        "reason": "history_found",
+    }
 
 
 def test_extract_structured_findings_empty_enrichment_gives_empty_dict():
