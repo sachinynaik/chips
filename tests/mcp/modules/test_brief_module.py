@@ -140,3 +140,51 @@ def test_get_context_brief_serializes_data_sources_to_dict():
     assert result["data_sources"]["runtime"] == {"status": "not_configured", "detail": "", "checked_at": None}
     assert result["data_sources"]["workflow"] == {"status": "error", "detail": "refused", "checked_at": None}
     assert result["data_sources"]["file_signals"] == {"status": "available", "detail": "", "checked_at": None}
+
+
+def test_get_context_brief_serializes_evidence_bundle_with_fragility_finding():
+    import uuid
+    from datetime import datetime, timezone
+    from chips.compiler.models import EvidenceBundle, EvidenceItem
+
+    fake_brief = MagicMock()
+    fake_brief.brief_id = uuid.uuid4()
+    fake_brief.task = "fix crash"
+    fake_brief.task_kind = "bugfix"
+    fake_brief.scope = "auth"
+    fake_brief.tenant_id = None
+    fake_brief.generated_at = datetime.now(timezone.utc)
+    fake_brief.latency_ms = 42
+    fake_brief.hard_constraints = []
+    fake_brief.compressed_context = "ctx"
+    fake_brief.schema_version = "1.0"
+    fake_brief.ranked_signals = []
+    fake_brief.retrieved.memories = []
+    fake_brief.forbidden_edits = []
+    fake_brief.allowed_edits = []
+    fake_brief.data_sources = {}
+    fake_brief.evidence_bundle = EvidenceBundle(
+        bundle_id=uuid.uuid4(),
+        constraints=[],
+        evidence=[
+            EvidenceItem(
+                evidence_id="find:abc123def456",
+                kind="finding",
+                label="Fragility: 2 prior defect-linked fixes touch this area",
+                text="Fragility: 2 prior defect-linked fixes touch this area (abc123, def456)",
+                weight=0.0,
+            )
+        ],
+    )
+
+    with patch("chips.mcp.modules.brief.BriefBuilder") as mock_builder_cls:
+        mock_builder = MagicMock()
+        mock_builder.build_and_log.return_value = fake_brief
+        mock_builder_cls.return_value = mock_builder
+        result = _make_module().get_context_brief(task="fix crash", scope="auth")
+
+    assert result["evidence_bundle"]["bundle_id"] == str(fake_brief.evidence_bundle.bundle_id)
+    assert result["evidence_bundle"]["constraints"] == []
+    assert result["evidence_bundle"]["evidence"][0]["evidence_id"] == "find:abc123def456"
+    assert result["evidence_bundle"]["evidence"][0]["kind"] == "finding"
+    assert "Fragility" in result["evidence_bundle"]["evidence"][0]["text"]
