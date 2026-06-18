@@ -24,7 +24,7 @@ def get_test_context(
 
     file_rows = conn.execute(
         f"""
-        SELECT file_path, churn_score, failure_count
+        SELECT file_path, churn_score, cochange_entropy, failure_count
         FROM cortex_file_signals
         WHERE {' AND '.join(file_conditions)}
         ORDER BY churn_score DESC
@@ -58,9 +58,10 @@ def get_test_context(
             {
                 "file_path": file_path,
                 "churn_score": churn_score,
+                "cochange_entropy": cochange_entropy,
                 "failure_count": failure_count,
             }
-            for file_path, churn_score, failure_count in file_rows
+            for file_path, churn_score, cochange_entropy, failure_count in file_rows
         ],
         "cochange_pairs": [
             {"file_a": a, "file_b": b, "frequency": freq}

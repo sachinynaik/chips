@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 import psycopg
 
 from chips.harvester.defect_corpus import extract_defect_evidence
@@ -92,16 +93,43 @@ class GitIngestion:
         reader = GitReader.__new__(GitReader)
         signals = reader._compute_file_signals(commits)
         for signal in signals:
+            cochange_entropy = self._compute_stored_cochange_entropy(signal.file_path)
             self._conn.execute(
                 """
                 INSERT INTO cortex_file_signals
-                    (file_path, churn_score, last_changed_at, updated_at)
-                VALUES (%s, %s, now(), now())
+                    (file_path, churn_score, cochange_entropy, last_changed_at, updated_at)
+                VALUES (%s, %s, %s, now(), now())
                 ON CONFLICT (file_path)
                 DO UPDATE SET
                     churn_score = cortex_file_signals.churn_score + EXCLUDED.churn_score,
+                    cochange_entropy = EXCLUDED.cochange_entropy,
                     last_changed_at = now(),
                     updated_at = now()
                 """,
-                (signal.file_path, signal.churn_score),
+                (signal.file_path, signal.churn_score, cochange_entropy),
             )
+
+    def _compute_stored_cochange_entropy(self, file_path: str) -> float:
+        rows = self._conn.execute(
+            """
+            SELECT file_a, file_b, frequency
+            FROM cortex_cochange_pairs
+            WHERE file_a = %s OR file_b = %s
+            """,
+            (file_path, file_path),
+        ).fetchall()
+        partner_frequencies = [
+            float(frequency)
+            for file_a, file_b, frequency in rows
+            if (file_a == file_path or file_b == file_path) and frequency > 0
+        ]
+        if len(partner_frequencies) <= 1:
+            return 0.0
+        total = sum(partner_frequencies)
+        if total <= 0:
+            return 0.0
+        entropy = 0.0
+        for value in partner_frequencies:
+            probability = value / total
+            entropy -= probability * math.log(probability)
+        return entropy / math.log(len(partner_frequencies))

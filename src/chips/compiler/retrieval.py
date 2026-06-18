@@ -26,15 +26,16 @@ def retrieve_file_signals(
     from chips.tenant import build_tenant_scope
     scoped = build_tenant_scope(["file_path = ANY(%s)"], [files], tenant_id)
     rows = conn.execute(  # type: ignore[arg-type]
-        f"SELECT file_path, churn_score, failure_count, last_changed_at FROM cortex_file_signals WHERE {' AND '.join(scoped.conditions)}",
+        f"SELECT file_path, churn_score, cochange_entropy, failure_count, last_changed_at FROM cortex_file_signals WHERE {' AND '.join(scoped.conditions)}",
         tuple(scoped.params),
     ).fetchall()
     return [
         {
             "file_path": row[0],
             "churn_score": row[1],
-            "failure_count": row[2],
-            "last_changed_at": row[3],
+            "cochange_entropy": row[2],
+            "failure_count": row[3],
+            "last_changed_at": row[4],
         }
         for row in rows
     ]

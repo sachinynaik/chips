@@ -24,6 +24,7 @@ class FileSignal:
     file_path: str
     churn_count: int
     churn_score: float
+    cochange_entropy: float = 0.0
 
 
 _LOG_FORMAT = "%H|%an|%aI|%s"
@@ -89,15 +90,38 @@ class GitReader:
 
     def _compute_file_signals(self, commits: list[CommitRecord]) -> list[FileSignal]:
         churn: dict[str, int] = {}
+        partner_freq: dict[str, dict[str, int]] = {}
         for commit in commits:
-            for f in commit.files_changed:
+            files = sorted(set(commit.files_changed))
+            for f in files:
                 churn[f] = churn.get(f, 0) + 1
+            for i, fa in enumerate(files):
+                for fb in files[i + 1:]:
+                    partner_freq.setdefault(fa, {})
+                    partner_freq.setdefault(fb, {})
+                    partner_freq[fa][fb] = partner_freq[fa].get(fb, 0) + 1
+                    partner_freq[fb][fa] = partner_freq[fb].get(fa, 0) + 1
         max_count = max(churn.values(), default=1)
         return [
             FileSignal(
                 file_path=fp,
                 churn_count=count,
                 churn_score=math.log(1 + count) / math.log(1 + max_count),
+                cochange_entropy=_normalized_entropy(partner_freq.get(fp, {}).values()),
             )
             for fp, count in churn.items()
         ]
+
+
+def _normalized_entropy(frequencies) -> float:
+    values = [float(freq) for freq in frequencies if freq > 0]
+    if len(values) <= 1:
+        return 0.0
+    total = sum(values)
+    if total <= 0:
+        return 0.0
+    entropy = 0.0
+    for value in values:
+        probability = value / total
+        entropy -= probability * math.log(probability)
+    return entropy / math.log(len(values))

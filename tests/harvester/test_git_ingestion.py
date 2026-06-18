@@ -84,6 +84,23 @@ def test_ingest_updates_file_signals(conn):
     assert row[0] > 0
 
 
+def test_ingest_persists_cochange_entropy_for_scattered_files(conn):
+    ingestion = GitIngestion(conn)
+    commits = [
+        _make_commit("abc010", ["src/hot.py", "src/a.py"]),
+        _make_commit("abc011", ["src/hot.py", "src/b.py"]),
+        _make_commit("abc012", ["src/hot.py", "src/c.py"]),
+    ]
+
+    ingestion.ingest_commits(commits)
+
+    row = conn.execute(
+        "SELECT cochange_entropy FROM cortex_file_signals WHERE file_path = 'src/hot.py'"
+    ).fetchone()
+    assert row is not None
+    assert row[0] > 0
+
+
 def test_ingest_captures_raw_defect_corpus_evidence(conn):
     ingestion = GitIngestion(conn)
     commit = CommitRecord(

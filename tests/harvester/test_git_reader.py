@@ -80,3 +80,35 @@ def test_compute_file_churn():
     by_file = {s.file_path: s for s in signals}
     assert by_file["foo.py"].churn_count == 2
     assert by_file["bar.py"].churn_count == 1
+
+
+def test_compute_file_signals_has_zero_entropy_for_single_stable_partner():
+    reader = GitReader.__new__(GitReader)
+    commits = [
+        CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+    ]
+
+    signals = reader._compute_file_signals(commits)
+    by_file = {s.file_path: s for s in signals}
+    assert by_file["foo.py"].cochange_entropy == 0.0
+    assert by_file["bar.py"].cochange_entropy == 0.0
+
+
+def test_compute_file_signals_entropy_increases_with_scattered_partners():
+    reader = GitReader.__new__(GitReader)
+    commits = [
+        CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
+        CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
+                     message="m", files_changed=["foo.py", "qux.py"]),
+    ]
+
+    signals = reader._compute_file_signals(commits)
+    by_file = {s.file_path: s for s in signals}
+    assert by_file["foo.py"].cochange_entropy > 0.0
+    assert by_file["bar.py"].cochange_entropy == 0.0
