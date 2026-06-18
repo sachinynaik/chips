@@ -47,6 +47,36 @@ def test_search_memory_returns_results():
     assert result == fake
 
 
+def test_search_memory_preserves_fragility_structured_findings():
+    from chips.mcp.modules.memory import MemoryModule
+
+    fake = [{
+        "content": "auth incidents",
+        "score": 0.9,
+        "type": "lesson",
+        "signal_breakdown": {},
+        "structured_findings": {
+            "fragility": {
+                "history_count": 2,
+                "matched_commits": ["abc123", "def456"],
+                "reason": "history_found",
+            }
+        },
+    }]
+    embedder = MagicMock()
+    embedder.embed.return_value = [0.1] * 768
+
+    with patch("chips.mcp.modules.memory._search_memory", return_value=fake):
+        module = MemoryModule(conn_factory=MagicMock(), embedder=embedder)
+        result = module.search_memory(query="auth incidents", scope=None, limit=10)
+
+    assert result[0]["structured_findings"]["fragility"] == {
+        "history_count": 2,
+        "matched_commits": ["abc123", "def456"],
+        "reason": "history_found",
+    }
+
+
 def test_memory_module_register_adds_tool_to_app():
     from chips.mcp.modules.memory import MemoryModule
     from mcp.server.fastmcp import FastMCP
