@@ -131,3 +131,12 @@ def test_compress_with_trace_returns_kept_and_dropped_ids():
 
     assert "m1" in trace["kept_item_ids"]
     assert "d1" in trace["dropped_item_ids"]
+
+
+def test_tiktoken_encoding_failure_falls_back_to_char_budget_counter():
+    with patch("chips.compiler.compressor._tiktoken.get_encoding", side_effect=Exception("offline")):
+        comp = _make(soft_char_budget=8)
+
+    trimmed = comp._trim_to_budget(["abcdefgh", "ijklmnop"])
+
+    assert trimmed == ["abcdefgh"]

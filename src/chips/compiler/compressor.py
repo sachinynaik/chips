@@ -21,7 +21,10 @@ def _build_token_counter(encoding_name: str):
     """Return a callable (text) -> int using tiktoken, or fall back to char/4."""
     if not _TIKTOKEN_AVAILABLE:
         return lambda text: max(1, math.ceil(len(text) / 4))
-    enc = _tiktoken.get_encoding(encoding_name)
+    try:
+        enc = _tiktoken.get_encoding(encoding_name)
+    except Exception:
+        return lambda text: max(1, math.ceil(len(text) / 4))
     return lambda text: max(1, len(enc.encode(text, disallowed_special=())))
 
 
