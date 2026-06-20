@@ -1,34 +1,48 @@
-# ADR-003: zap for Operator-Loop Output Compaction
+# ADR-003: Operator-Loop Output Compaction Bake-Off (`zap` vs `RTK`)
 
 **Date:** 2026-06-05 (revised same day per Codex review)
-**Status:** Companion-tooling spike approved — explicitly NOT on the product roadmap
+**Status:** Companion-tooling bake-off approved — explicitly NOT on the product roadmap
 critical path
-**Tool:** https://github.com/bitan-del/zap (Rust CLI, Apache-2.0, very young: 6 commits,
-solo author, no test suite/CI as of 2026-06-05)
+**Tools:** `zap` — https://github.com/bitan-del/zap (Rust CLI, Apache-2.0, very young:
+6 commits, solo author, no test suite/CI as of 2026-06-05) · `RTK` —
+https://github.com/rtk-ai/rtk (Rust CLI, Apache-2.0, higher adoption, richer command
+coverage, maturity to be validated by spike rather than inferred from stars)
 
 ## Context
 
 Operating CHIPS development burns tokens on noisy command output: WSL container test
-runs, docker/service logs, act pre-push gate output, CI failure dumps. zap is a local
-CLI proxy that filters/groups/deduplicates command output via per-command TOML recipes
-(~60 recipes, 42+ command types) before it reaches an AI agent, claiming 60–90% savings.
+runs, docker/service logs, act pre-push gate output, CI failure dumps. `zap` and `RTK`
+are both local CLI proxies that compact command output before it reaches an AI agent.
+This is strictly an operator-loop concern: wrong layer for CHIPS core, but a legitimate
+dev-machine efficiency slot.
+
+The important split is not vendor A vs vendor B. It is **two command classes wearing one
+label**:
+
+1. **Interactive shell output** — latency-sensitive, conversational, frequently discarded.
+2. **CI/test logs** — bulk, structured, failure-anchored, where the failing assertion and
+   its context matter more than uniform compression.
+
+A tool that is good at one may be wrong for the other. The bake-off therefore tests both
+classes separately and explicitly allows **one winner, both for different classes, or
+neither**.
 
 ## Decision
 
-**Borrow / companion spike.** Run it on CHIPS's own noisy operator outputs and measure
-token savings vs information loss. It is a *workflow companion*, not a CHIPS dependency:
-wrong language (Rust) and wrong layer (output-side shell proxy) for integration into the
-compiler.
+**Companion-tooling bake-off.** Run `zap` and `RTK` on CHIPS's own noisy operator
+outputs and compare token savings vs information loss by command class. This is a
+workflow companion decision, not a CHIPS dependency decision: wrong language (Rust) and
+wrong layer (output-side shell proxy) for integration into the compiler.
 
 ## Purpose & fit
 
 - **Purpose:** cut the operator token bill of developing/running CHIPS.
-- **Fit:** thematically adjacent (CHIPS compresses input-side context; zap compresses
-  output-side telemetry) but architecturally disjoint — no shared substrate.
+- **Fit:** thematically adjacent (CHIPS compresses input-side context; these tools
+  compact output-side telemetry) but architecturally disjoint — no shared substrate.
 
 ## Scope
 
-- **In (spike):** test-log summarization, docker/service logs, act/CI failure
+- **In (bake-off):** test-log summarization, docker/service logs, act/CI failure
   compaction; a savings-vs-loss measurement on real CHIPS sessions.
 - **Out (hard rule):** any path where exact raw output is contractually required —
   golden tests, byte-identical determinism checks, normalization conformance output,
@@ -37,21 +51,43 @@ compiler.
 
 ## Approach
 
-**Borrow.** If the spike shows real savings, adopt as an opt-in operator tool (and/or
-lift its recipe-driven deterministic-compaction *pattern* for future CHIPS operator
-tooling). Maturity (no tests, solo, week-old) is acceptable for a dev-loop companion;
-it would not be acceptable for anything load-bearing.
+**Borrow / compare.** If the bake-off shows real savings, adopt one tool, both tools for
+different command classes, or neither. The outcome is intentionally not forced to a
+single winner. Recoverability of full output and exit-code fidelity are hard gates for
+both candidates.
 
 ## Timing & gates
 
 Anytime — it touches the operator loop only, so it can interleave with Foundation work
-without violating the Foundation-first rule. Gate for *adoption* (vs spike): measured
-savings with no observed information loss on the deterministic-path exclusion list.
-**Kill criterion:** abandon if it hides needed error detail even once on or near the
-exclusion list. Time budget: 0.5 day.
+without violating the Foundation-first rule.
+
+**Locked bake-off rubric**
+
+- Evaluate **interactive shell output** and **CI/test logs** separately.
+- Measure three things per class:
+  1. token/output reduction,
+  2. recoverability of full output,
+  3. exit-code fidelity.
+- Hard gates for either tool:
+  - **recoverability** must work for the tested class,
+  - **exit-code fidelity** must hold exactly,
+  - the tool must not hide needed error detail on or near the exclusion list.
+
+**Allowed outcomes**
+
+- `zap` wins both classes,
+- `RTK` wins both classes,
+- each wins a different class,
+- neither is adopted.
+
+**Kill criterion:** abandon a candidate for a class if it hides needed error detail even
+once on or near the exclusion list, fails recoverability, or fails exit-code fidelity.
+Time budget: 0.5 day.
 
 ## Consequences
 
 - + Cheap, immediate, measurable token savings on the noisiest part of the dev loop.
+- + The split by command class prevents optimizing the average while failing the tails.
 - − A filter between operator and agent is a new failure mode (hidden signal); mitigated
-  by the per-command allowlist and the raw-output exclusion rule.
+  by per-class hard gates on recoverability, exit-code fidelity, and the raw-output
+  exclusion rule.

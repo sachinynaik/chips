@@ -8,6 +8,7 @@ import psycopg
 from chips.harvester.extractor import CommitMemoryExtractor
 from chips.harvester.git_reader import GitReader
 from chips.harvester.ingestion import GitIngestion
+from chips.harvester.storage import HarvesterStore, PostgresHarvesterStore
 from chips.harvester.embedding import OllamaEmbedder
 from chips.memory.repository import MemoryRepository
 
@@ -22,12 +23,14 @@ class HarvesterDaemon:
         repo_path: str,
         poll_interval: int = 60,
         extractor: CommitMemoryExtractor | None = None,
+        harvester_store: HarvesterStore | None = None,
     ) -> None:
         self._conn = conn
         self._embedder = embedder
         self._repo_path = repo_path
         self._poll_interval = poll_interval
         self._extractor = extractor or CommitMemoryExtractor()
+        self._harvester_store = harvester_store or PostgresHarvesterStore(conn)
 
     def run_once(self) -> int:
         """Process new commits since last run. Returns count of memories written."""
@@ -39,7 +42,7 @@ class HarvesterDaemon:
         if not commits:
             return 0
 
-        GitIngestion(self._conn).ingest_commits(commits)
+        GitIngestion(self._harvester_store).ingest_commits(commits)
 
         repo = MemoryRepository(self._conn)
         count = 0
@@ -67,11 +70,4 @@ class HarvesterDaemon:
             time.sleep(self._poll_interval)
 
     def _last_ingested_sha(self) -> str | None:
-        row = self._conn.execute(
-            """
-            SELECT sha FROM cortex_git_commits
-            ORDER BY committed_at DESC
-            LIMIT 1
-            """
-        ).fetchone()
-        return row[0] if row else None
+        return self._harvester_store.latest_ingested_sha()

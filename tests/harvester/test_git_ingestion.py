@@ -2,6 +2,7 @@
 import pytest
 from chips.harvester.git_reader import CommitRecord
 from chips.harvester.ingestion import GitIngestion
+from chips.compiler.retrieval import retrieve_file_signals
 
 
 def _make_commit(sha: str, files: list[str]) -> CommitRecord:
@@ -101,6 +102,27 @@ def test_ingest_persists_cochange_entropy_for_scattered_files(conn):
     assert row[0] > 0
 
 
+def test_ingest_marks_generated_kind_and_snapshots_it(conn):
+    ingestion = GitIngestion(conn)
+    commit = _make_commit("abc013", ["src/migrations/001_auth.py", "src/auth.py"])
+
+    ingestion.ingest_commits([commit])
+
+    signal_row = conn.execute(
+        "SELECT generated_kind, cochange_entropy "
+        "FROM cortex_file_signals WHERE file_path = 'src/migrations/001_auth.py'"
+    ).fetchone()
+    snapshot_row = conn.execute(
+        "SELECT basis_sha, generated_kind, fragility_complete, fragility_inputs_missing "
+        "FROM cortex_file_signal_snapshots WHERE file_path = 'src/migrations/001_auth.py'"
+    ).fetchone()
+    assert signal_row == ("scaffolded", 0.0)
+    assert snapshot_row[0] == "abc013"
+    assert snapshot_row[1] == "scaffolded"
+    assert snapshot_row[2] is False
+    assert "defect_history_count" in snapshot_row[3]
+
+
 def test_ingest_captures_raw_defect_corpus_evidence(conn):
     ingestion = GitIngestion(conn)
     commit = CommitRecord(
@@ -141,3 +163,106 @@ def test_ingest_captures_revert_linkage_for_defect_corpus(conn):
     ).fetchone()
     assert row is not None
     assert row[0] == "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_retrieve_file_signals_uses_high_precision_defect_rule(conn):
+    ingestion = GitIngestion(conn)
+    non_defect = CommitRecord(
+        sha="abc014",
+        author="test",
+        committed_at="2026-05-10T12:00:00+00:00",
+        message="refs #88 only",
+        files_changed=["src/auth.py"],
+    )
+    true_defect = CommitRecord(
+        sha="abc015",
+        author="test",
+        committed_at="2026-05-11T12:00:00+00:00",
+        message="bugfix(auth): closes #77",
+        files_changed=["src/auth.py"],
+    )
+
+    ingestion.ingest_commits([non_defect, true_defect])
+
+    result = retrieve_file_signals(conn, ["src/auth.py"])
+    assert result[0]["defect_history_count"] == 1
+    assert result[0]["yield_score"]["mode"] == "raw"
+    assert result[0]["assay"]["purity"]["score"] == 1.0
+
+
+def test_defect_corpus_is_rebuildable_from_git_commits(conn):
+    ingestion = GitIngestion(conn)
+    commits = [
+        CommitRecord(
+            sha="abc016",
+            author="test",
+            committed_at="2026-05-12T12:00:00+00:00",
+            message="hotfix(auth): resolve incident ABC-123 closes #77",
+            files_changed=["src/auth.py"],
+        ),
+        CommitRecord(
+            sha="abc017",
+            author="test",
+            committed_at="2026-05-13T12:00:00+00:00",
+            message='Revert "break auth"\n\nThis reverts commit 0123456789abcdef0123456789abcdef01234567.',
+            files_changed=["src/auth.py"],
+        ),
+    ]
+
+    ingestion.ingest_commits(commits)
+
+    original_rows = conn.execute(
+        """
+        SELECT
+            sha,
+            issue_refs,
+            revert_of_sha,
+            has_bug_keyword,
+            has_defect_keyword,
+            has_hotfix_keyword,
+            has_incident_keyword
+        FROM cortex_defect_corpus
+        WHERE sha IN ('abc016', 'abc017')
+        ORDER BY sha
+        """
+    ).fetchall()
+
+    conn.execute("DELETE FROM cortex_defect_corpus WHERE sha IN ('abc016', 'abc017')")
+
+    raw_commits = [
+        CommitRecord(
+            sha=row[0],
+            author=row[1],
+            committed_at=row[2].isoformat(),
+            message=row[3],
+            files_changed=row[4],
+        )
+        for row in conn.execute(
+            """
+            SELECT sha, author, committed_at, message, files_changed
+            FROM cortex_git_commits
+            WHERE sha IN ('abc016', 'abc017')
+            ORDER BY sha
+            """
+        ).fetchall()
+    ]
+
+    ingestion._upsert_defect_corpus(raw_commits)
+
+    rebuilt_rows = conn.execute(
+        """
+        SELECT
+            sha,
+            issue_refs,
+            revert_of_sha,
+            has_bug_keyword,
+            has_defect_keyword,
+            has_hotfix_keyword,
+            has_incident_keyword
+        FROM cortex_defect_corpus
+        WHERE sha IN ('abc016', 'abc017')
+        ORDER BY sha
+        """
+    ).fetchall()
+
+    assert rebuilt_rows == original_rows

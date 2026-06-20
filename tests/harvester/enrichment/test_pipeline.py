@@ -82,7 +82,11 @@ def test_pipeline_refactoring_type_is_none():
 
 def test_pipeline_fetches_scope_memories_when_conn_factory_provided():
     conn = MagicMock()
-    conn.execute.return_value.fetchall.return_value = []
+    count_cursor = MagicMock()
+    count_cursor.fetchone.return_value = (0,)
+    recent_cursor = MagicMock()
+    recent_cursor.fetchall.return_value = []
+    conn.execute.side_effect = [count_cursor, recent_cursor]
     pipeline = _pipeline(conn_factory=lambda: conn)
     pipeline.enrich(_commit(), "auth")
     pipeline._scope_memories.fetch.assert_called_once()
@@ -100,7 +104,9 @@ def test_pipeline_defect_risk_uses_db_history_when_conn_factory_provided():
 
     def execute(sql, params):
         cursor = MagicMock()
-        if "FROM cortex_git_commits" in sql and "cortex_defect_corpus" in sql:
+        if "COUNT(DISTINCT g.sha)" in sql:
+            cursor.fetchone.return_value = (2,)
+        elif "FROM cortex_git_commits" in sql and "cortex_defect_corpus" in sql:
             cursor.fetchall.return_value = [("abc111",), ("abc222",)]
         else:
             cursor.fetchall.return_value = []

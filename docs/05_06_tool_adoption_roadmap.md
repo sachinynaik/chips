@@ -59,7 +59,7 @@ integrated. If a borrow's value is achievable without new machinery, it stays a 
 | Tool | Spike question | Success metric | Abandon condition | Time budget | Ops budget | ADR |
 |------|----------------|----------------|-------------------|-------------|------------|-----|
 | Zenith | Spike for possible integration: does contract-token trace search beat what we already have? | **Locked rubric in ADR-002** (stratified ≥10-query pre-committed corpus: ≥6 span-content / ≥2 mixed / ≥2 hard; ≥7/10 impossible-or-≥10×-faster/easier vs SigNoz+OTel/SQL on time + operator steps + evidence-retrieval success; ≤1/10 materially worse; retention prototype works; coverage audit ≥80%) — amendable only by recorded ADR amendment, never at spike start | Per ADR-002 locked rubric: below pass; >2 days; >20 GB; coverage audit fails; or >50% of real investigation questions are raw-log-dependent; or contract-lane thesis spike fails first | 2 days | Ephemeral spike deployment on the shared WSL host, torn down after; **no always-on service before an integration decision** | ADR-002 |
-| zap | Companion spike: measured operator-loop token savings without information loss | Measured savings on real CHIPS sessions (test logs, act/CI output) with zero observed loss of needed detail | **Hides needed error detail even once** on or near the exclusion list; or savings unmeasurable/marginal | 0.5 day | None (local CLI, opt-in, off product path) | ADR-003 |
+| zap / RTK | Companion bake-off: which tool, if any, best compacts operator-loop output by command class? | Locked ADR-003 rubric: score **interactive shell output** and **CI/test logs** separately on reduction, recoverability, and exit-code fidelity; outcome may be zap, RTK, both for different classes, or neither | Any candidate fails if it hides needed error detail even once on or near the exclusion list, fails recoverability, or fails exit-code fidelity for the tested class | 0.5 day | None (local CLI, opt-in, off product path) | ADR-003 |
 
 Spike owner for both: Sachin + session agent (solo repo).
 
@@ -69,6 +69,11 @@ Spike owner for both: Sachin + session agent (solo repo).
 |------|--------------------|---------------------|-----|
 | smallcode | Symbol-aware chunking; bounded-injection patterns; trace-to-test / operator-UX ideas | Touching `structural.py` or the rank/compress boundary | ADR-004 |
 | opensquilla | Hybrid lexical/vector **fallback heuristics only** | Designing the multi-lane retriever slice, after the contract-lane spike passes | ADR-005 |
+
+LeanCTX remains a **borrow-only footnote** (quality-gated lossy compression, stub-and-expand,
+benchmark harness), intentionally below ADR weight until a real implementation slice wants it.
+Pi is recorded only as a **possible second CHIPS-brief consumer** after the first vertical proves
+the agent-agnostic claim; no ADR yet.
 
 ### Watch / Reject
 
@@ -83,7 +88,7 @@ Spike owner for both: Sachin + session agent (solo repo).
 | Tool | Runtime service? | New storage? | New failure mode? | Infra owner? | Rollback difficulty |
 |------|------------------|--------------|--------------------|--------------|---------------------|
 | Zenith | Yes — new Rust service | Yes — columnar segments | Yes — cache divergence, ingest lag, alpha format breaks | Sachin (shared WSL host) | Low *only if* derived-cache posture is kept (wipe + re-warm); high if it quietly becomes load-bearing |
-| zap | No (CLI proxy) | SQLite stats (trivial) | Yes — filtered-away signal | n/a | Trivial (stop using it) |
+| zap / RTK | No (CLI proxy) | Small local metadata/state only | Yes — filtered-away signal, recoverability failure, or exit-code distortion | n/a | Trivial (stop using them) |
 | Borrows / Watch / Reject | No | No | No | n/a | n/a |
 
 ## Sequencing
@@ -96,7 +101,7 @@ Spike owner for both: Sachin + session agent (solo repo).
    reworked.**
 3. **Zenith spike** (ADR-002) only if 2 passes and the OTel ingestion adapter (27_05
    item 7) exists to give trace evidence a path into briefs.
-4. **zap spike** (ADR-003) may interleave anywhere — companion tooling, zero CHIPS code.
+4. **operator-loop compaction bake-off** (ADR-003: `zap` vs `RTK`) may interleave anywhere — companion tooling, zero CHIPS code.
 5. Borrows activate strictly on their stated triggers.
 
 ## ADR index
@@ -104,7 +109,7 @@ Spike owner for both: Sachin + session agent (solo repo).
 - `ADR-001-v1-architecture.md` — **historical baseline** (2026-05-12); current authority
   is the execution ledger + later ADRs
 - `ADR-002-zenith-contract-trace-cache.md` — Zenith: spike approved, integration undecided
-- `ADR-003-zap-operator-output-compaction.md` — zap: companion spike (not product path)
+- `ADR-003-zap-operator-output-compaction.md` — operator-loop compaction bake-off (`zap` vs `RTK`; not product path)
 - `ADR-004-smallcode-retrieval-patterns.md` — smallcode: narrowed pattern borrows
 - `ADR-005-opensquilla-hybrid-recall.md` — opensquilla: fallback-heuristics borrow only
 - `ADR-006-mirage-evidence-vfs.md` — mirage: watch

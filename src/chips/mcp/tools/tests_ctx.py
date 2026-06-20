@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import psycopg
 
-from chips.compiler.retrieval import _fragility_score
+from chips.compiler.retrieval import _fragility_inputs, _fragility_score
+from chips.harvester.assay import assay_signal
+from chips.harvester.defect_corpus import estimate_defect_density, high_precision_defect_sql
+from chips.harvester.yield_score import compute_yield_score
 
 
 def get_test_context(
@@ -23,6 +27,7 @@ def get_test_context(
         file_conditions.append("tenant_id = %s")
         file_params.append(tenant_id)
     file_params.append(limit)
+    predicate = high_precision_defect_sql("d")
 
     file_rows = conn.execute(
         f"""
@@ -30,17 +35,13 @@ def get_test_context(
             file_path,
             churn_score,
             cochange_entropy,
+            generated_kind,
             (
                 SELECT COUNT(DISTINCT g.sha)
                 FROM cortex_git_commits g
                 JOIN cortex_defect_corpus d ON d.sha = g.sha
                 WHERE g.files_changed && ARRAY[cortex_file_signals.file_path]
-                  AND (
-                    cardinality(d.issue_refs) > 0
-                    OR d.revert_of_sha IS NOT NULL
-                    OR d.has_hotfix_keyword = TRUE
-                    OR d.has_incident_keyword = TRUE
-                  )
+                  AND {predicate}
             ) AS defect_history_count,
             failure_count
         FROM cortex_file_signals
@@ -73,15 +74,15 @@ def get_test_context(
 
     return {
         "test_files": [
-            {
-                "file_path": file_path,
-                "churn_score": churn_score,
-                "cochange_entropy": cochange_entropy,
-                "defect_history_count": defect_history_count,
-                "fragility": _fragility_score(churn_score, cochange_entropy, defect_history_count),
-                "failure_count": failure_count,
-            }
-            for file_path, churn_score, cochange_entropy, defect_history_count, failure_count in file_rows
+            _build_test_file_context(
+                file_path=file_path,
+                churn_score=churn_score,
+                cochange_entropy=cochange_entropy,
+                generated_kind=generated_kind,
+                defect_history_count=defect_history_count,
+                failure_count=failure_count,
+            )
+            for file_path, churn_score, cochange_entropy, generated_kind, defect_history_count, failure_count in file_rows
         ],
         "cochange_pairs": [
             {"file_a": a, "file_b": b, "frequency": freq}
@@ -89,4 +90,44 @@ def get_test_context(
         ],
         "scope": scope,
         "status": "ok",
+    }
+
+
+def _build_test_file_context(
+    *,
+    file_path: str,
+    churn_score: float | None,
+    cochange_entropy: float | None,
+    generated_kind: str | None,
+    defect_history_count: int | None,
+    failure_count: int | None,
+) -> dict:
+    defect_density, defect_density_basis_nloc = estimate_defect_density(
+        [file_path],
+        defect_count=defect_history_count or 0,
+    )
+    return {
+        "file_path": file_path,
+        "churn_score": churn_score,
+        "cochange_entropy": cochange_entropy,
+        "generated_kind": generated_kind,
+        "defect_history_count": defect_history_count,
+        "defect_density": defect_density,
+        "defect_density_basis_nloc": defect_density_basis_nloc,
+        "yield_score": compute_yield_score(
+            churn_score=churn_score,
+            cochange_entropy=cochange_entropy,
+            defect_history_count=defect_history_count,
+            defect_density=defect_density,
+        ),
+        "assay": assay_signal(
+            source_kind="git_history",
+            assayed_at=datetime.now(timezone.utc),
+            code_version=None,
+            observed_changed_at=None,
+            dopants=[],
+        ),
+        "fragility": _fragility_score(churn_score, cochange_entropy, defect_history_count),
+        "fragility_inputs": _fragility_inputs(churn_score, cochange_entropy, defect_history_count),
+        "failure_count": failure_count,
     }

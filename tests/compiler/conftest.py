@@ -1,12 +1,15 @@
-"""Local conftest for compiler tests — overrides autouse apply_migrations.
+"""Compiler tests are a mix of mock-based and DB-backed cases."""
 
-All compiler tests are mock-based (no real DB). Without this override the
-session-level autouse fixture pulls in testcontainers for every test here.
-"""
+from __future__ import annotations
+
+import os
+
 import pytest
 
 
 @pytest.fixture(scope="session", autouse=True)
-def apply_migrations():  # noqa: F811 — intentional override of root conftest fixture
-    """No-op: compiler tests use mocked connections; no DB migration needed."""
+def apply_migrations(request):  # noqa: F811 - intentional override of root fixture
+    """No-op only when no explicit DB-backed test path is configured."""
+    if os.getenv("CHIPS_TEST_DB_URL") or os.getenv("CHIPS_TEST_DB_ROOT_URL"):
+        return request.getfixturevalue("_root_apply_migrations")
     return

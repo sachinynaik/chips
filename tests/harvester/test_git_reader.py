@@ -112,3 +112,71 @@ def test_compute_file_signals_entropy_increases_with_scattered_partners():
     by_file = {s.file_path: s for s in signals}
     assert by_file["foo.py"].cochange_entropy > 0.0
     assert by_file["bar.py"].cochange_entropy == 0.0
+
+
+def test_compute_file_signals_entropy_is_maximal_for_uniform_partner_distribution():
+    reader = GitReader.__new__(GitReader)
+    commits = [
+        CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
+        CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
+                     message="m", files_changed=["foo.py", "qux.py"]),
+    ]
+
+    signals = reader._compute_file_signals(commits)
+    by_file = {s.file_path: s for s in signals}
+    assert by_file["foo.py"].cochange_entropy == 1.0
+
+
+def test_compute_file_signals_entropy_is_lower_for_concentrated_partner_distribution():
+    reader = GitReader.__new__(GitReader)
+    uniform_commits = [
+        CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
+        CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
+                     message="m", files_changed=["foo.py", "qux.py"]),
+    ]
+    concentrated_commits = [
+        CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="d", author="D", committed_at="2026-05-04T00:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
+    ]
+
+    uniform = {s.file_path: s for s in reader._compute_file_signals(uniform_commits)}
+    concentrated = {s.file_path: s for s in reader._compute_file_signals(concentrated_commits)}
+    assert concentrated["foo.py"].cochange_entropy < uniform["foo.py"].cochange_entropy
+
+
+def test_compute_file_signals_ignores_generated_partners_for_entropy():
+    reader = GitReader.__new__(GitReader)
+    commits = [
+        CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
+                     message="m", files_changed=["src/foo.py", "src/bar.py"]),
+        CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
+                     message="m", files_changed=["src/foo.py", "src/migrations/001_init.py"]),
+    ]
+
+    signals = reader._compute_file_signals(commits)
+    by_file = {s.file_path: s for s in signals}
+    assert by_file["src/foo.py"].cochange_entropy == 0.0
+
+
+def test_compute_file_signals_marks_generated_kind():
+    reader = GitReader.__new__(GitReader)
+    commits = [
+        CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
+                     message="m", files_changed=["src/__generated__/api.py"]),
+    ]
+
+    signals = reader._compute_file_signals(commits)
+    by_file = {s.file_path: s for s in signals}
+    assert by_file["src/__generated__/api.py"].generated_kind == "generated"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from chips.mcp.tools.tests_ctx import get_test_context
 
@@ -17,7 +18,7 @@ def _conn(file_rows=None, cochange_rows=None):
     return conn
 
 
-_FILE_ROW = ("src/test_auth.py", 0.8, 0.4, 2, 2)
+_FILE_ROW = ("src/test_auth.py", 0.8, 0.4, None, 2, 2)
 _COCHANGE_ROW = ("src/test_auth.py", "src/auth.py", 5)
 
 
@@ -61,9 +62,10 @@ def test_empty_db_returns_empty_lists():
 # ---------------------------------------------------------------------------
 
 def test_test_file_has_expected_keys():
-    result = get_test_context(_conn(file_rows=[_FILE_ROW]))
+    with patch("chips.mcp.tools.tests_ctx.estimate_defect_density", return_value=(2.0, 500)):
+        result = get_test_context(_conn(file_rows=[_FILE_ROW]))
     f = result["test_files"][0]
-    for key in ("file_path", "churn_score", "cochange_entropy", "defect_history_count", "fragility", "failure_count"):
+    for key in ("file_path", "churn_score", "cochange_entropy", "generated_kind", "defect_history_count", "defect_density", "defect_density_basis_nloc", "fragility", "fragility_inputs", "failure_count"):
         assert key in f, f"missing key: {key}"
 
 
@@ -92,9 +94,53 @@ def test_test_file_defect_history_count_correct():
     assert result["test_files"][0]["defect_history_count"] == 2
 
 
+def test_test_file_defect_density_uses_density_helper():
+    with patch("chips.mcp.tools.tests_ctx.estimate_defect_density", return_value=(2.0, 500)):
+        result = get_test_context(_conn(file_rows=[_FILE_ROW]))
+
+    assert result["test_files"][0]["defect_density"] == 2.0
+    assert result["test_files"][0]["defect_density_basis_nloc"] == 500
+
+
+def test_test_file_yield_score_is_present():
+    with patch("chips.mcp.tools.tests_ctx.estimate_defect_density", return_value=(2.0, 500)):
+        with patch(
+            "chips.mcp.tools.tests_ctx.compute_yield_score",
+            return_value={"score": 4.2, "mode": "raw", "calibrated": False, "inputs": {"complete": True, "present": [], "missing": []}},
+        ):
+            with patch(
+                "chips.mcp.tools.tests_ctx.assay_signal",
+                return_value={"purity": {"score": 1.0, "deterministic_fraction": 1.0, "dopants": []}, "freshness": {"complete": False, "missing": ["code_version"]}, "source_kind": "git_history"},
+            ):
+                result = get_test_context(_conn(file_rows=[_FILE_ROW]))
+
+    assert result["test_files"][0]["yield_score"]["mode"] == "raw"
+    assert result["test_files"][0]["yield_score"]["calibrated"] is False
+
+
+def test_test_file_assay_is_present():
+    with patch("chips.mcp.tools.tests_ctx.estimate_defect_density", return_value=(2.0, 500)):
+        with patch(
+            "chips.mcp.tools.tests_ctx.assay_signal",
+            return_value={"purity": {"score": 1.0, "deterministic_fraction": 1.0, "dopants": []}, "freshness": {"complete": False, "missing": ["code_version"]}, "source_kind": "git_history"},
+        ):
+            result = get_test_context(_conn(file_rows=[_FILE_ROW]))
+
+    assert result["test_files"][0]["assay"]["purity"]["score"] == 1.0
+
+
 def test_test_file_fragility_correct():
     result = get_test_context(_conn(file_rows=[_FILE_ROW]))
     assert result["test_files"][0]["fragility"] == 0.65
+
+
+def test_test_file_fragility_inputs_complete_when_all_inputs_present():
+    result = get_test_context(_conn(file_rows=[_FILE_ROW]))
+    assert result["test_files"][0]["fragility_inputs"] == {
+        "complete": True,
+        "present": ["churn_score", "cochange_entropy", "defect_history_count"],
+        "missing": [],
+    }
 
 
 # ---------------------------------------------------------------------------

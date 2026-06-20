@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 
+from chips.harvester.signals import classify_generated_kind, cochange_entropy_for_file
+
 
 @dataclass
 class CommitRecord:
@@ -25,6 +27,7 @@ class FileSignal:
     churn_count: int
     churn_score: float
     cochange_entropy: float = 0.0
+    generated_kind: str | None = None
 
 
 _LOG_FORMAT = "%H|%an|%aI|%s"
@@ -107,21 +110,14 @@ class GitReader:
                 file_path=fp,
                 churn_count=count,
                 churn_score=math.log(1 + count) / math.log(1 + max_count),
-                cochange_entropy=_normalized_entropy(partner_freq.get(fp, {}).values()),
+                cochange_entropy=cochange_entropy_for_file(fp, partner_freq.get(fp, {})),
+                generated_kind=classify_generated_kind(fp),
             )
             for fp, count in churn.items()
         ]
 
 
 def _normalized_entropy(frequencies) -> float:
-    values = [float(freq) for freq in frequencies if freq > 0]
-    if len(values) <= 1:
-        return 0.0
-    total = sum(values)
-    if total <= 0:
-        return 0.0
-    entropy = 0.0
-    for value in values:
-        probability = value / total
-        entropy -= probability * math.log(probability)
-    return entropy / math.log(len(values))
+    from chips.harvester.signals import normalized_entropy
+
+    return normalized_entropy(frequencies)

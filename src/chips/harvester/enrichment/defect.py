@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from chips.harvester.defect_corpus import estimate_defect_density, high_precision_defect_sql
+
 
 class DefectPredictor:
     """Fetch prior evidence-backed defect history for touched files."""
@@ -21,29 +23,44 @@ class DefectPredictor:
         if conn is None or not files_changed:
             return {**base, "reason": "insufficient_history"}
 
+        predicate = high_precision_defect_sql("d")
+        history_count = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT g.sha)
+            FROM cortex_git_commits g
+            JOIN cortex_defect_corpus d ON d.sha = g.sha
+            WHERE g.files_changed && %s
+              AND {predicate}
+            """,
+            (files_changed,),
+        ).fetchone()[0]
+        if history_count == 0:
+            return {
+                **base,
+                "reason": "no_prior_defects",
+                "defect_density": None,
+                "density_basis_nloc": 0,
+            }
+
         rows = conn.execute(
             """
             SELECT DISTINCT g.sha
             FROM cortex_git_commits g
             JOIN cortex_defect_corpus d ON d.sha = g.sha
             WHERE g.files_changed && %s
-              AND (
-                cardinality(d.issue_refs) > 0
-                OR d.revert_of_sha IS NOT NULL
-                OR d.has_hotfix_keyword = TRUE
-                OR d.has_incident_keyword = TRUE
-              )
+              AND """ + predicate + """
             ORDER BY g.sha DESC
             LIMIT %s
             """,
             (files_changed, limit),
         ).fetchall()
         matched_commits = [row[0] for row in rows]
-        if not matched_commits:
-            return {**base, "reason": "no_prior_defects"}
+        density, basis_nloc = estimate_defect_density(files_changed, defect_count=history_count)
         return {
             **base,
             "reason": "history_found",
-            "history_count": len(matched_commits),
+            "history_count": history_count,
             "matched_commits": matched_commits,
+            "defect_density": density,
+            "density_basis_nloc": basis_nloc,
         }
