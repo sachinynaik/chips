@@ -27,8 +27,10 @@ def _pipeline(conn_factory=None):
     git_diff.fetch.return_value = ("diff content", ["def create_auth_token"])
     complexity = MagicMock(spec=LizardAnalyzer)
     complexity.analyze.return_value = []
+    complexity.last_status = "ok"
     semgrep = MagicMock(spec=SemgrepAnalyzer)
     semgrep.analyze.return_value = []
+    semgrep.last_status = "ok"
     semble = MagicMock(spec=SembleEnricher)
     semble.enrich.return_value = []
     graphify = MagicMock(spec=GraphifyEnricher)
@@ -187,7 +189,9 @@ def test_pipeline_backend_recorded_in_result():
 
 def test_pipeline_analyzer_status_empty_when_no_analyzers():
     result = _pipeline().enrich(_commit(), "auth")
-    assert result.analyzer_status == {}
+    assert result.analyzer_status["complexity"] == "ok"
+    assert result.analyzer_status["semgrep"] == "ok"
+    assert result.analyzer_status["joern"] == "not_installed"
 
 
 def test_pipeline_records_type_checker_status():
@@ -223,3 +227,61 @@ def test_pipeline_records_api_surface_status():
     pipeline._api_surface = api
     result = pipeline.enrich(_commit(), "auth")
     assert result.analyzer_status["api_surface"] == "failed"
+
+
+def test_pipeline_records_semgrep_status():
+    pipeline = _pipeline()
+    pipeline._semgrep.last_status = "not_installed"
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["semgrep"] == "not_installed"
+
+
+def test_pipeline_records_security_status():
+    from chips.harvester.enrichment.security import BanditAnalyzer
+    security = MagicMock(spec=BanditAnalyzer)
+    security.analyze.return_value = []
+    security.last_status = "timed_out"
+    pipeline = _pipeline()
+    pipeline._security = security
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["security"] == "timed_out"
+
+
+def test_pipeline_records_architecture_status():
+    from chips.harvester.enrichment.architecture import ImportLinterAnalyzer
+    architecture = MagicMock(spec=ImportLinterAnalyzer)
+    architecture.analyze.return_value = []
+    architecture.last_status = "failed"
+    pipeline = _pipeline()
+    pipeline._architecture = architecture
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["architecture"] == "failed"
+
+
+def test_pipeline_records_clones_status():
+    from chips.harvester.enrichment.clones import JscpdAnalyzer
+    clones = MagicMock(spec=JscpdAnalyzer)
+    clones.analyze.return_value = []
+    clones.last_status = "ok"
+    pipeline = _pipeline()
+    pipeline._clones = clones
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["clones"] == "ok"
+
+
+def test_pipeline_records_complexity_status():
+    pipeline = _pipeline()
+    pipeline._complexity.last_status = "failed"
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["complexity"] == "failed"
+
+
+def test_pipeline_records_joern_status():
+    from chips.harvester.enrichment.joern import JoernAnalyzer
+    joern = MagicMock(spec=JoernAnalyzer)
+    joern.analyze.return_value = []
+    joern.last_status = "not_installed"
+    pipeline = _pipeline()
+    pipeline._joern = joern
+    result = pipeline.enrich(_commit(), "auth")
+    assert result.analyzer_status["joern"] == "not_installed"

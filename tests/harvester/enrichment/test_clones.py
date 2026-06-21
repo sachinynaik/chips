@@ -164,3 +164,28 @@ def test_min_lines_param_passed_to_jscpd() -> None:
 def test_min_tokens_param_passed_to_jscpd() -> None:
     analyzer = JscpdAnalyzer(repo_path="/tmp/repo", min_tokens=100)
     assert analyzer._min_tokens == 100
+
+
+def test_last_status_defaults_to_skipped() -> None:
+    assert JscpdAnalyzer(repo_path="/tmp/repo").last_status == "skipped"
+
+
+def test_last_status_ok_on_success() -> None:
+    analyzer = JscpdAnalyzer(repo_path="/tmp/repo")
+    with patch.object(analyzer, "_run_jscpd", return_value=_make_report([])):
+        analyzer.analyze(["src/foo.py"])
+    assert analyzer.last_status == "ok"
+
+
+def test_last_status_not_installed_when_jscpd_missing() -> None:
+    analyzer = JscpdAnalyzer(repo_path="/tmp/repo")
+    with patch.object(analyzer, "_run_jscpd", side_effect=FileNotFoundError):
+        analyzer.analyze(["src/foo.py"])
+    assert analyzer.last_status == "not_installed"
+
+
+def test_last_status_failed_when_output_missing() -> None:
+    analyzer = JscpdAnalyzer(repo_path="/tmp/repo")
+    with patch.object(analyzer, "_run_jscpd", side_effect=FileNotFoundError("no output file")):
+        analyzer.analyze(["src/foo.py"])
+    assert analyzer.last_status == "failed"

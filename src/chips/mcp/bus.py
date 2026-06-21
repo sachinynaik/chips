@@ -68,6 +68,7 @@ def create_bus(
 ) -> tuple[FastMCP, BusRegistry]:
     from chips.mcp.modules.brief import BriefModule
     from chips.mcp.modules.briefs import BriefsModule
+    from chips.mcp.modules.constraints import ConstraintsModule
     from chips.mcp.modules.contracts import ContractsModule
     from chips.mcp.modules.diffs import DiffsModule
     from chips.mcp.modules.feedback import FeedbackModule
@@ -105,6 +106,7 @@ def create_bus(
     registry.add(RuntimeModule())
     registry.add(WorkflowModule())
     registry.add(ContractsModule(conn_factory=conn_factory))
+    registry.add(ConstraintsModule(conn_factory=conn_factory))
     registry.add(TestsModule(conn_factory=conn_factory))
     registry.add(PolicyModule(policy_loader=policy_loader))
     registry.add(BriefsModule(conn_factory=conn_factory))

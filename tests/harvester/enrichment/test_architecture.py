@@ -184,3 +184,37 @@ def test_real_temp_importlinter_file(tmp_path: Path) -> None:
     with patch("subprocess.run", return_value=_ok_result()):
         result = ImportLinterAnalyzer(str(tmp_path)).analyze([])
     assert result == []
+
+
+def test_last_status_defaults_to_skipped(tmp_path: Path) -> None:
+    assert ImportLinterAnalyzer(str(tmp_path)).last_status == "skipped"
+
+
+def test_last_status_skipped_when_config_missing(tmp_path: Path) -> None:
+    analyzer = ImportLinterAnalyzer(str(tmp_path))
+    analyzer.analyze(["src/foo.py"])
+    assert analyzer.last_status == "skipped"
+
+
+def test_last_status_ok_on_success(tmp_path: Path) -> None:
+    _make_importlinter(tmp_path)
+    analyzer = ImportLinterAnalyzer(str(tmp_path))
+    with patch("subprocess.run", return_value=_ok_result()):
+        analyzer.analyze(["src/foo.py"])
+    assert analyzer.last_status == "ok"
+
+
+def test_last_status_not_installed_when_lint_imports_missing(tmp_path: Path) -> None:
+    _make_importlinter(tmp_path)
+    analyzer = ImportLinterAnalyzer(str(tmp_path))
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        analyzer.analyze(["src/foo.py"])
+    assert analyzer.last_status == "not_installed"
+
+
+def test_last_status_timed_out_when_lint_imports_times_out(tmp_path: Path) -> None:
+    _make_importlinter(tmp_path)
+    analyzer = ImportLinterAnalyzer(str(tmp_path))
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="lint-imports", timeout=60)):
+        analyzer.analyze(["src/foo.py"])
+    assert analyzer.last_status == "timed_out"

@@ -128,16 +128,14 @@ learning-adjusted component of confidence. The learning loop itself is sanctione
 
 ---
 
-## L9 — Constraint substrate has no MCP add/retire surface
+## L9 — Constraint substrate lacked an MCP surface — ✅ RESOLVED
 
-**Location:** `src/chips/compiler/constraint_repository.py` (read path only)  
-**Behavior:** `ConstraintRepository.for_scope` loads active `cortex_constraints` and the builder
-injects them, but there is **no `cortex_add_constraint` / `get_constraints` MCP tool**.
-Constraints can only enter the table via direct SQL or a migration. The Phase 0 deliverable's
-"manual add/retire" capability is therefore not yet reachable by an agent.  
-**When it becomes a defect:** Immediately for the Phase 1 write-back review queue, whose
-invariant ("constraints created only via `cortex_add_constraint`, human-confirmed") has no sink.  
-**Follow-up:** D4 — add the constraint MCP tools (add/get, tenant-scoped, dedup-safe).
+> **Resolved.** The MCP/operator surface now exists via
+> `src/chips/mcp/tools/constraints.py` and `src/chips/mcp/modules/constraints.py`,
+> with bus registration in `src/chips/mcp/bus.py`. Agents can now inspect, add,
+> and retire tenant-scoped constraints through `get_constraints`,
+> `add_constraint`, and `retire_constraint`. The remaining work is higher-level
+> write-back/review-queue plumbing, not raw operator reachability.
 
 ---
 
@@ -162,19 +160,14 @@ findings empty) is now distinguishable from a non-result, upholding "Evidence > 
 
 ---
 
-## L11 — Several enrichment analyzers still swallow failures (deferred)
+## L11 — Several enrichment analyzers swallowed failures — ✅ MOSTLY RESOLVED
 
-**Location:** `src/chips/harvester/enrichment/` — `semgrep.py`, `security.py` (bandit),
-`architecture.py` (import-linter), `clones.py` (jscpd), `complexity.py` (lizard), `joern.py`.  
-**Behavior:** These analyzers were **not** touched by the enrichment-reliability slice and still
-return empty on failure, so "tool not installed / crashed / timed out" can read as a false-clean
-"no findings". Note that `jscpd` (Node) and `joern` (JVM) are legitimately optional — they are
-not Python deps and are expected to be absent in many environments. Where they have already been
-migrated to the status contract (pyrefly/type_checker, vulture/griffe), a missing tool now
-surfaces as `not_installed` rather than a false-clean.  
-**When it becomes a defect:** Any consumer that treats an empty findings list from these
-analyzers as evidence of cleanliness, when in fact the analyzer never ran.  
-**Follow-up:** Extend the `AnalyzerStatus` contract (a `status` key for dict-returning analyzers,
-a `last_status` accessor for list-returning ones) to semgrep / bandit / import-linter / clones /
-complexity / joern, and surface them through `EnrichmentResult.analyzer_status` in `pipeline.py`.
-Deferred follow-up slice.
+> **Resolved for the listed analyzers.** `semgrep`, `security` (bandit),
+> `architecture` (import-linter), `clones` (jscpd), `complexity` (lizard),
+> and `joern` now expose truthful analyzer status and the pipeline propagates it
+> via `EnrichmentResult.analyzer_status`. Empty findings no longer automatically
+> imply a clean run for these analyzers.
+>
+> **Remaining caution:** this closes the false-clean behavior for the analyzers
+> named in this limitation. It does not claim every present or future analyzer in
+> the repo already follows the contract without audit.

@@ -44,6 +44,7 @@ def test_harvester_table_classification_is_explicit_and_non_overlapping():
 class _FakeStore:
     appended_commits: list[list[CommitRecord]] = field(default_factory=list)
     rebuilt_defect_batches: list[list[CommitRecord]] = field(default_factory=list)
+    rebuilt_defect_shas: list[list[str]] = field(default_factory=list)
     merged_pairs: list[list[tuple[str, str, int]]] = field(default_factory=list)
     upserted_signals: list[dict] = field(default_factory=list)
     snapshots: list[dict] = field(default_factory=list)
@@ -54,6 +55,9 @@ class _FakeStore:
 
     def rebuild_defect_corpus(self, commits: list[CommitRecord]) -> None:
         self.rebuilt_defect_batches.append(commits)
+
+    def rebuild_defect_corpus_for_shas(self, shas: list[str]) -> None:
+        self.rebuilt_defect_shas.append(shas)
 
     def merge_cochange_pairs(self, pairs: list[tuple[str, str, int]]) -> None:
         self.merged_pairs.append(pairs)
@@ -112,7 +116,8 @@ def test_git_ingestion_uses_store_boundary_for_truth_and_derived_writes():
         GitIngestion._compute_stored_cochange_entropy = original
 
     assert store.appended_commits == [[commits[0]]]
-    assert store.rebuilt_defect_batches == [[commits[0]]]
+    assert store.rebuilt_defect_batches == []
+    assert store.rebuilt_defect_shas == [["abc123"]]
     assert store.upserted_signals == [
         {
             "file_path": signal.file_path,
@@ -135,6 +140,38 @@ def test_postgres_store_latest_ingested_sha_reads_truth_table():
 
     assert store.latest_ingested_sha() == "sha-last"
     assert "FROM cortex_git_commits" in conn.execute.call_args.args[0]
+
+
+def test_postgres_store_rebuild_defect_corpus_for_shas_reads_truth_then_writes_derived():
+    conn = MagicMock()
+
+    select_cursor = MagicMock()
+    select_cursor.fetchall.return_value = [
+        (
+            "abc123",
+            "Alice",
+            "2026-06-20T00:00:00+00:00",
+            "hotfix(auth): resolve incident ABC-123 closes #77",
+            ["src/auth.py"],
+        )
+    ]
+    insert_cursor = MagicMock()
+    conn.execute.side_effect = [select_cursor, insert_cursor]
+
+    store = PostgresHarvesterStore(conn)
+
+    store.rebuild_defect_corpus_for_shas(["abc123"])
+
+    select_sql, select_params = conn.execute.call_args_list[0].args
+    insert_sql, insert_params = conn.execute.call_args_list[1].args
+
+    assert "FROM cortex_git_commits" in select_sql
+    assert select_params == (["abc123"],)
+    assert "INSERT INTO cortex_defect_corpus" in insert_sql
+    assert insert_params[0] == "abc123"
+    assert insert_params[1] == ["#77", "ABC-123"]
+    assert insert_params[5] is True
+    assert insert_params[6] is True
 
 
 def test_daemon_reads_latest_sha_through_store_boundary():

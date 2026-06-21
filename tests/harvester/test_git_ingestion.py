@@ -2,6 +2,7 @@
 import pytest
 from chips.harvester.git_reader import CommitRecord
 from chips.harvester.ingestion import GitIngestion
+from chips.harvester.storage import PostgresHarvesterStore
 from chips.compiler.retrieval import retrieve_file_signals
 
 
@@ -229,25 +230,7 @@ def test_defect_corpus_is_rebuildable_from_git_commits(conn):
 
     conn.execute("DELETE FROM cortex_defect_corpus WHERE sha IN ('abc016', 'abc017')")
 
-    raw_commits = [
-        CommitRecord(
-            sha=row[0],
-            author=row[1],
-            committed_at=row[2].isoformat(),
-            message=row[3],
-            files_changed=row[4],
-        )
-        for row in conn.execute(
-            """
-            SELECT sha, author, committed_at, message, files_changed
-            FROM cortex_git_commits
-            WHERE sha IN ('abc016', 'abc017')
-            ORDER BY sha
-            """
-        ).fetchall()
-    ]
-
-    ingestion._upsert_defect_corpus(raw_commits)
+    PostgresHarvesterStore(conn).rebuild_defect_corpus_for_shas(["abc016", "abc017"])
 
     rebuilt_rows = conn.execute(
         """

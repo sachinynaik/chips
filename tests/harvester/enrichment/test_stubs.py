@@ -11,6 +11,16 @@ def test_joern_analyzer_returns_empty_list():
     result = JoernAnalyzer().analyze(["src/auth.py"])
     assert result == []
 
+
+def test_joern_analyzer_last_status_defaults_to_skipped():
+    assert JoernAnalyzer().last_status == "skipped"
+
+
+def test_joern_analyzer_last_status_not_installed_for_nonempty_input():
+    analyzer = JoernAnalyzer()
+    analyzer.analyze(["src/auth.py"])
+    assert analyzer.last_status == "not_installed"
+
 def test_defect_predictor_returns_stub_with_null_risk():
     result = DefectPredictor().predict("some diff", "fix bug")
     assert result["risk_score"] is None

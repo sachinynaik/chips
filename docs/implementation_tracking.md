@@ -63,7 +63,7 @@ It is deliberately implementation-facing. If a capability is not in code, this d
 
 **Partial**
 
-- EvidenceBundle / hypothesis contract is defined and partly implemented, but not fully assembled and wired end-to-end through MCP.
+- EvidenceBundle assembly and MCP wire serialization are built, but hypothesis submission and write-back are not yet end-to-end.
 - Constraint memory exists in part, but manual operator/agent surfaces are incomplete.
 
 **Blocked**
@@ -112,12 +112,13 @@ It is deliberately implementation-facing. If a capability is not in code, this d
 
 - Phase 1 evidence and hypothesis contract is locked
 - Primitive evidence/hypothesis data types and scoring substrate exist
+- EvidenceBundle assembly at build time and MCP wire serialization are built
 - Constraint ideas and retrieval-side use are defined and partly present
+- Constraint MCP/operator surface exists for inspect/add/retire flows
 
 **Partial**
 
-- Full EvidenceBundle assembly and submission/write-back loop are not yet fully wired
-- Constraint MCP add/retire surface is still a gap
+- Hypothesis submission and write-back loop are not yet fully wired
 - Learned anti-regression memory is not yet fully operational as the controlling write-back loop
 
 ### L5 — Learning loop
@@ -206,8 +207,8 @@ Use `05_06_tool_adoption_roadmap.md` and ADR-002..ADR-008 rather than treating r
 
 ### Partial and should be completed
 
-- EvidenceBundle end-to-end wiring
-- Constraint MCP surfaces and write-back path
+- Hypothesis submission and write-back wiring
+- Constraint write-back and review-queue path
 - Remaining harvester / enrichment reliability gaps
 - Rebuildability and truth-vs-derived enforcement on the harvester side
 
@@ -232,7 +233,7 @@ This section is the short list of load-bearing unfinished work, not an exhaustiv
 
 | Gap | Why it matters | Current source |
 |---|---|---|
-| EvidenceBundle not fully wired | blocks ranked hypotheses from becoming an operational loop | `31_05_codex_remediation_plan.md`, Phase 1 contract |
+| Hypothesis submission/write-back not fully wired | blocks ranked hypotheses from becoming an operational loop | `31_05_codex_remediation_plan.md`, Phase 1 contract |
 | Constraint MCP surface missing | anti-regression memory cannot close the loop safely | `known_limitations.md` L9 |
 | Some analyzers still fail false-clean | weakens evidence quality silently | `known_limitations.md` L11 |
 | Learning loop blocked on verifier | prevents any honest reward/mastery/OPE claims | execution ledger |
@@ -246,10 +247,10 @@ This is the short operational queue by layer. It is intentionally concrete and s
 | Layer | Next slice | Why this is next | Constraint |
 |---|---|---|---|
 | L0 Governance | Keep this doc, A0, and the ledger aligned when layer status changes | prevents doc drift from becoming false truth | do not restate target ambition as built state |
-| L1 Runtime foundation | Finish EvidenceBundle / hypothesis wiring and close remaining runtime integration seams | this turns the contract into a live compiler path | must respect ledger blocked states |
+| L1 Runtime foundation | Finish hypothesis submission/write-back wiring and close remaining runtime integration seams | this turns the contract into a live operational path | must respect ledger blocked states |
 | L2 Harvester / signals | Enforce rebuildability and derived-vs-truth boundaries; continue Track 1 signal completion | this is the active vertical and highest-value code path | stay on Postgres/pgvector until trigger conditions change |
 | L3 Observability | Keep Grafana and metrics-authority surfaces honest; avoid building blocked trend consumers early | observability is useful now, but only for active signals | no reward-consumer surfaces before verifier-backed metrics exist |
-| L4 Constraints / anti-regression | Add the constraint MCP add/retire surface and finish write-back plumbing | closes the operator-safe anti-regression loop | human-confirm invariants stay intact |
+| L4 Constraints / anti-regression | Finish write-back and review-queue plumbing on top of the now-built MCP/operator surface | closes the operator-safe anti-regression loop | human-confirm invariants stay intact |
 | L5 Learning loop | Do not code reward/mastery/OPE/online-bandit until verifier unlocks them | avoids theater metrics and fake adaptivity | execution ledger is the gate |
 | L6 Compact context | Only promote compact-context behavior after its explicit gates pass | measured token win alone is not enough | honor normalization and promotion gates |
 | L7 Target gate | Keep as paper design until Track 2 P0 exists | protects against building the wrong gate too early | no gate code before P0 |

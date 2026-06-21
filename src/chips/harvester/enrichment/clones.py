@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from chips.harvester.enrichment.models import AnalyzerStatus
+
 
 _MAX_RESULTS = 20
 
@@ -21,6 +23,11 @@ class JscpdAnalyzer:
         self._repo_path = repo_path
         self._min_lines = min_lines
         self._min_tokens = min_tokens
+        self._last_status = AnalyzerStatus.SKIPPED.value
+
+    @property
+    def last_status(self) -> str:
+        return self._last_status
 
     def analyze(self, file_paths: list[str]) -> list[dict]:
         """Return list of clone findings (capped at 20).
@@ -37,14 +44,26 @@ class JscpdAnalyzer:
             "language": str,
         }
         """
+        self._last_status = AnalyzerStatus.SKIPPED.value
         if not file_paths:
             return []
 
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 report = self._run_jscpd(file_paths, tmp_dir)
+                self._last_status = AnalyzerStatus.OK.value
                 return self._parse_report(report)
+        except FileNotFoundError as exc:
+            if exc.args and "output" in str(exc.args[0]).lower():
+                self._last_status = AnalyzerStatus.FAILED.value
+            else:
+                self._last_status = AnalyzerStatus.NOT_INSTALLED.value
+            return []
+        except subprocess.TimeoutExpired:
+            self._last_status = AnalyzerStatus.TIMED_OUT.value
+            return []
         except Exception:
+            self._last_status = AnalyzerStatus.FAILED.value
             return []
 
     # ------------------------------------------------------------------

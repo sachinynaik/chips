@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 
+from chips.harvester.enrichment.models import AnalyzerStatus
+
 _SEVERITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
 
@@ -22,6 +24,11 @@ class BanditAnalyzer:
                                  Findings below this level are discarded.
         """
         self._threshold = severity_threshold.upper()
+        self._last_status = AnalyzerStatus.SKIPPED.value
+
+    @property
+    def last_status(self) -> str:
+        return self._last_status
 
     def analyze(self, file_paths: list[str]) -> list[dict]:
         """Return security findings for the given files.
@@ -36,6 +43,7 @@ class BanditAnalyzer:
                 file, line, test_id, test_name, severity, confidence, message
         """
         py_files = [f for f in file_paths if f.endswith(".py")]
+        self._last_status = AnalyzerStatus.SKIPPED.value
         if not py_files:
             return []
 
@@ -47,15 +55,19 @@ class BanditAnalyzer:
                 timeout=120,
             )
         except FileNotFoundError:
+            self._last_status = AnalyzerStatus.NOT_INSTALLED.value
             return []
         except subprocess.TimeoutExpired:
+            self._last_status = AnalyzerStatus.TIMED_OUT.value
             return []
         except Exception:
+            self._last_status = AnalyzerStatus.FAILED.value
             return []
 
         try:
             data = json.loads(result.stdout)
         except (json.JSONDecodeError, ValueError):
+            self._last_status = AnalyzerStatus.FAILED.value
             return []
 
         raw_results = data.get("results", [])
@@ -76,4 +88,5 @@ class BanditAnalyzer:
                 "message": item.get("issue_text", ""),
             })
 
+        self._last_status = AnalyzerStatus.OK.value
         return findings

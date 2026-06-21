@@ -23,6 +23,9 @@ def test_server_exposes_health_and_feedback_tools():
         "get_contracts",
         "get_test_context",
         "get_policy",
+        "get_constraints",
+        "add_constraint",
+        "retire_constraint",
     }
     assert expected.issubset(registered)
 

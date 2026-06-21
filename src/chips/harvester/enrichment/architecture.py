@@ -3,12 +3,19 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from chips.harvester.enrichment.models import AnalyzerStatus
+
 
 class ImportLinterAnalyzer:
     """Run import-linter to detect architecture layer violations."""
 
     def __init__(self, repo_path: str) -> None:
         self._repo_path = Path(repo_path)
+        self._last_status = AnalyzerStatus.SKIPPED.value
+
+    @property
+    def last_status(self) -> str:
+        return self._last_status
 
     def analyze(self, file_paths: list[str]) -> list[dict]:
         """Return list of architecture violation dicts.
@@ -22,6 +29,7 @@ class ImportLinterAnalyzer:
         }
         """
         config = self._repo_path / ".importlinter"
+        self._last_status = AnalyzerStatus.SKIPPED.value
         if not config.exists():
             return []
 
@@ -33,17 +41,25 @@ class ImportLinterAnalyzer:
                 timeout=120,
             )
         except FileNotFoundError:
+            self._last_status = AnalyzerStatus.NOT_INSTALLED.value
             return []
         except subprocess.TimeoutExpired:
+            self._last_status = AnalyzerStatus.TIMED_OUT.value
             return []
         except Exception:
+            self._last_status = AnalyzerStatus.FAILED.value
             return []
 
         if result.returncode == 0:
+            self._last_status = AnalyzerStatus.OK.value
             return []
 
         output = result.stdout or result.stderr or ""
-        return self._parse_violations(output)
+        violations = self._parse_violations(output)
+        self._last_status = (
+            AnalyzerStatus.OK.value if output.strip() else AnalyzerStatus.FAILED.value
+        )
+        return violations
 
     # ------------------------------------------------------------------
     # Internal helpers

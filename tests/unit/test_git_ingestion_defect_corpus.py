@@ -26,8 +26,29 @@ def _defect_corpus_calls(conn: MagicMock) -> list[tuple[str, tuple]]:
     return calls
 
 
-def test_ingest_commits_writes_raw_defect_corpus_issue_refs_and_keywords():
+def _conn_for_truth_backed_rebuild() -> MagicMock:
     conn = MagicMock()
+    git_rows: dict[str, tuple[str, str, str, str, list[str]]] = {}
+
+    def execute(sql, params=None):
+        cursor = MagicMock()
+        if "INSERT INTO cortex_git_commits" in sql:
+            sha, author, committed_at, message, files_changed = params
+            git_rows[sha] = (sha, author, committed_at, message, files_changed)
+            cursor.fetchall.return_value = []
+        elif "SELECT sha, author, committed_at, message, files_changed" in sql:
+            requested = params[0]
+            cursor.fetchall.return_value = [git_rows[sha] for sha in requested]
+        else:
+            cursor.fetchall.return_value = []
+        return cursor
+
+    conn.execute.side_effect = execute
+    return conn
+
+
+def test_ingest_commits_writes_raw_defect_corpus_issue_refs_and_keywords():
+    conn = _conn_for_truth_backed_rebuild()
     ingestion = GitIngestion(conn)
 
     ingestion.ingest_commits([_commit("hotfix(auth): resolve incident ABC-123 closes #77")])
@@ -42,7 +63,7 @@ def test_ingest_commits_writes_raw_defect_corpus_issue_refs_and_keywords():
 
 
 def test_ingest_commits_writes_raw_defect_corpus_revert_linkage():
-    conn = MagicMock()
+    conn = _conn_for_truth_backed_rebuild()
     ingestion = GitIngestion(conn)
 
     ingestion.ingest_commits(

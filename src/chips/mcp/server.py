@@ -5,6 +5,9 @@ import time
 # Re-export these into the server namespace so tests can patch them directly.
 from chips.compiler.builder import BriefBuilder  # noqa: F401
 from chips.compiler.learning import BriefLearningService
+from chips.mcp.tools.constraints import add_constraint as _add_constraint
+from chips.mcp.tools.constraints import get_constraints as _get_constraints
+from chips.mcp.tools.constraints import retire_constraint as _retire_constraint
 from chips.memory.outcome_repository import BriefOutcomeRepository
 from chips.mcp.bus import (
     _get_compressor,
@@ -123,10 +126,72 @@ def submit_brief_feedback(
     }
 
 
+def get_constraints(
+    scope: str | None = None,
+    tenant_id: str | None = None,
+) -> dict:
+    from chips.tenant import require_tenant
+
+    require_tenant(tenant_id)
+    conn = _get_conn()
+    try:
+        return _get_constraints(conn, scope=scope, tenant_id=tenant_id)
+    finally:
+        conn.close()
+
+
+def add_constraint(
+    *,
+    scope_pattern: str = "*",
+    kind: str,
+    text: str,
+    reason: str | None = None,
+    source_kind: str | None = None,
+    source_ref: str | None = None,
+    target: dict | None = None,
+    tenant_id: str | None = None,
+) -> dict:
+    from chips.tenant import require_tenant
+
+    require_tenant(tenant_id)
+    conn = _get_conn()
+    try:
+        return _add_constraint(
+            conn,
+            scope_pattern=scope_pattern,
+            kind=kind,
+            text=text,
+            reason=reason,
+            source_kind=source_kind,
+            source_ref=source_ref,
+            target=target,
+            tenant_id=tenant_id,
+        )
+    finally:
+        conn.close()
+
+
+def retire_constraint(
+    constraint_id: str,
+    tenant_id: str | None = None,
+) -> dict:
+    from chips.tenant import require_tenant
+
+    require_tenant(tenant_id)
+    conn = _get_conn()
+    try:
+        return _retire_constraint(conn, constraint_id=constraint_id, tenant_id=tenant_id)
+    finally:
+        conn.close()
+
+
 __all__ = [
     "app",
     "main",
     "get_context_brief",
     "get_source_health",
     "submit_brief_feedback",
+    "get_constraints",
+    "add_constraint",
+    "retire_constraint",
 ]

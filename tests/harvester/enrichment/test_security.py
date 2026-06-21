@@ -202,6 +202,41 @@ def test_handles_subprocess_timeout():
     assert result == []
 
 
+def test_last_status_defaults_to_skipped():
+    assert BanditAnalyzer().last_status == "skipped"
+
+
+def test_last_status_ok_on_success():
+    finding = _finding()
+    analyzer = BanditAnalyzer()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = _bandit_result([finding])
+        analyzer.analyze(["/repo/src/auth.py"])
+    assert analyzer.last_status == "ok"
+
+
+def test_last_status_not_installed_when_bandit_missing():
+    analyzer = BanditAnalyzer()
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        analyzer.analyze(["/repo/src/auth.py"])
+    assert analyzer.last_status == "not_installed"
+
+
+def test_last_status_timed_out_when_bandit_times_out():
+    analyzer = BanditAnalyzer()
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="bandit", timeout=120)):
+        analyzer.analyze(["/repo/src/auth.py"])
+    assert analyzer.last_status == "timed_out"
+
+
+def test_last_status_failed_on_invalid_json():
+    analyzer = BanditAnalyzer()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=2, stdout="", stderr="fatal error")
+        analyzer.analyze(["/repo/src/auth.py"])
+    assert analyzer.last_status == "failed"
+
+
 # ---------------------------------------------------------------------------
 # Valid enum values
 # ---------------------------------------------------------------------------

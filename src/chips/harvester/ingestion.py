@@ -31,7 +31,7 @@ class GitIngestion:
         self._store.merge_cochange_pairs(pairs)
 
     def _upsert_defect_corpus(self, commits: list[CommitRecord]) -> None:
-        self._store.rebuild_defect_corpus(commits)
+        self._store.rebuild_defect_corpus_for_shas([commit.sha for commit in commits])
 
     def _upsert_file_signals(self, commits: list[CommitRecord]) -> None:
         reader = GitReader.__new__(GitReader)

@@ -33,6 +33,8 @@ class HarvesterStore(Protocol):
 
     def rebuild_defect_corpus(self, commits: list[CommitRecord]) -> None: ...
 
+    def rebuild_defect_corpus_for_shas(self, shas: list[str]) -> None: ...
+
     def merge_cochange_pairs(self, pairs: list[tuple[str, str, int]]) -> None: ...
 
     def partner_frequencies(self, file_path: str) -> Mapping[str, float]: ...
@@ -148,6 +150,30 @@ class PostgresHarvesterStore:
                     evidence.has_incident_keyword,
                 ),
             )
+
+    def rebuild_defect_corpus_for_shas(self, shas: list[str]) -> None:
+        if not shas:
+            return
+        rows = self._conn.execute(
+            """
+            SELECT sha, author, committed_at, message, files_changed
+            FROM cortex_git_commits
+            WHERE sha = ANY(%s)
+            ORDER BY committed_at ASC, sha ASC
+            """,
+            (shas,),
+        ).fetchall()
+        commits = [
+            CommitRecord(
+                sha=row[0],
+                author=row[1],
+                committed_at=row[2].isoformat() if hasattr(row[2], "isoformat") else row[2],
+                message=row[3],
+                files_changed=row[4],
+            )
+            for row in rows
+        ]
+        self.rebuild_defect_corpus(commits)
 
     def merge_cochange_pairs(self, pairs: list[tuple[str, str, int]]) -> None:
         for file_a, file_b, freq in pairs:

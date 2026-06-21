@@ -71,10 +71,15 @@ class EnrichmentPipeline:
     def enrich(self, commit: CommitRecord, scope: str) -> EnrichmentResult:
         diff_content, hunk_headers = self._git_diff.fetch(commit.sha)
 
-        complexity_metrics = self._complexity.analyze(commit.files_changed)
-        semgrep_findings = self._semgrep.analyze(commit.files_changed)
-
         analyzer_status: dict[str, str] = {}
+        complexity_metrics = self._complexity.analyze(commit.files_changed)
+        analyzer_status["complexity"] = getattr(
+            self._complexity, "last_status", AnalyzerStatus.OK.value
+        )
+        semgrep_findings = self._semgrep.analyze(commit.files_changed)
+        analyzer_status["semgrep"] = getattr(
+            self._semgrep, "last_status", AnalyzerStatus.OK.value
+        )
 
         type_errors: list[dict] = []
         type_coverage: dict = {}
@@ -105,6 +110,9 @@ class EnrichmentPipeline:
         security_findings: list[dict] = []
         if self._security is not None:
             security_findings = self._security.analyze(commit.files_changed)
+            analyzer_status["security"] = getattr(
+                self._security, "last_status", AnalyzerStatus.OK.value
+            )
 
         line_coverage: dict = {}
         if self._coverage_reader is not None:
@@ -113,10 +121,16 @@ class EnrichmentPipeline:
         architecture_violations: list[dict] = []
         if self._architecture is not None:
             architecture_violations = self._architecture.analyze(commit.files_changed)
+            analyzer_status["architecture"] = getattr(
+                self._architecture, "last_status", AnalyzerStatus.OK.value
+            )
 
         clone_findings: list[dict] = []
         if self._clones is not None:
             clone_findings = self._clones.analyze(commit.files_changed)
+            analyzer_status["clones"] = getattr(
+                self._clones, "last_status", AnalyzerStatus.OK.value
+            )
 
         ownership: dict = {}
         if self._ownership is not None:
@@ -135,6 +149,9 @@ class EnrichmentPipeline:
 
         refactoring_type = self._refactoring.detect(diff_content)
         cpg_findings = self._joern.analyze(commit.files_changed)
+        analyzer_status["joern"] = getattr(
+            self._joern, "last_status", AnalyzerStatus.OK.value
+        )
         defect_risk = self._defect.predict(diff_content, commit.message)
 
         scope_memories: list[dict] = []
