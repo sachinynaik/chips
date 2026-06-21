@@ -3,8 +3,9 @@ from __future__ import annotations
 import psycopg
 
 from chips.compiler.fragility import fragility_inputs, fragility_score
+from chips.harvester.storage import HarvesterStore, PostgresHarvesterStore
 from chips.harvester.assay import assay_signal
-from chips.harvester.defect_corpus import estimate_defect_density, high_precision_defect_sql
+from chips.harvester.defect_corpus import estimate_defect_density
 from chips.harvester.yield_score import compute_yield_score
 from chips.mcp.tools.diffs import get_diffs_for_scope as _get_diffs_for_scope
 from chips.mcp.tools.memory import search_memory as _search_memory
@@ -22,36 +23,13 @@ def retrieve_memories(
 
 
 def retrieve_file_signals(
-    conn: psycopg.Connection,
+    conn: psycopg.Connection | HarvesterStore,
     files: list[str],
     tenant_id: str | None = None,
 ) -> list[dict]:
     if not files:
         return []
-    from chips.tenant import build_tenant_scope
-    scoped = build_tenant_scope(["file_path = ANY(%s)"], [files], tenant_id)
-    predicate = high_precision_defect_sql("d")
-    rows = conn.execute(  # type: ignore[arg-type]
-        f"""
-        SELECT
-            file_path,
-            churn_score,
-            cochange_entropy,
-            generated_kind,
-            (
-                SELECT COUNT(DISTINCT g.sha)
-                FROM cortex_git_commits g
-                JOIN cortex_defect_corpus d ON d.sha = g.sha
-                WHERE g.files_changed && ARRAY[cortex_file_signals.file_path]
-                  AND {predicate}
-            ) AS defect_history_count,
-            failure_count,
-            last_changed_at
-        FROM cortex_file_signals
-        WHERE {' AND '.join(scoped.conditions)}
-        """,
-        tuple(scoped.params),
-    ).fetchall()
+    rows = _as_harvester_store(conn).file_signals_for_paths(files, tenant_id=tenant_id)
     results = []
     for row in rows:
         defect_density, defect_density_basis_nloc = estimate_defect_density(
@@ -117,24 +95,21 @@ def retrieve_diffs(
 
 
 def retrieve_cochanges(
-    conn: psycopg.Connection,
+    conn: psycopg.Connection | HarvesterStore,
     files: list[str],
     limit: int = 10,
     tenant_id: str | None = None,
 ) -> list[dict]:
     if not files:
         return []
-    from chips.tenant import build_tenant_scope
-    scoped = build_tenant_scope(
-        ["(file_a = ANY(%s) OR file_b = ANY(%s))"],
-        [files, files],
-        tenant_id,
-    )
-    rows = conn.execute(  # type: ignore[arg-type]
-        f"SELECT file_a, file_b, frequency, last_seen_at FROM cortex_cochange_pairs WHERE {' AND '.join(scoped.conditions)} ORDER BY frequency DESC LIMIT %s",
-        (*scoped.params, limit),
-    ).fetchall()
+    rows = _as_harvester_store(conn).cochanges_for_files(files, limit=limit, tenant_id=tenant_id)
     return [
         {"file_a": row[0], "file_b": row[1], "frequency": row[2], "last_seen_at": row[3]}
         for row in rows
     ]
+
+
+def _as_harvester_store(conn: psycopg.Connection | HarvesterStore) -> HarvesterStore:
+    if isinstance(conn, PostgresHarvesterStore) or hasattr(type(conn), "file_signals_for_paths"):
+        return conn
+    return PostgresHarvesterStore(conn)

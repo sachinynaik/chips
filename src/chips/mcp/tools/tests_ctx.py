@@ -4,73 +4,22 @@ from datetime import datetime, timezone
 import psycopg
 
 from chips.compiler.retrieval import _fragility_inputs, _fragility_score
+from chips.harvester.storage import HarvesterStore, PostgresHarvesterStore
 from chips.harvester.assay import assay_signal
-from chips.harvester.defect_corpus import estimate_defect_density, high_precision_defect_sql
+from chips.harvester.defect_corpus import estimate_defect_density
 from chips.harvester.yield_score import compute_yield_score
 
 
 def get_test_context(
-    conn: psycopg.Connection,
+    conn: psycopg.Connection | HarvesterStore,
     scope: str | None = None,
     limit: int = 20,
     tenant_id: str | None = None,
 ) -> dict:
     """Return test file signals and co-change pairs, optionally filtered by scope and tenant."""
-    scope_pattern = f"%{scope}%" if scope else None
-
-    file_conditions = ["file_path ILIKE '%test%'"]
-    file_params: list = []
-    if scope_pattern:
-        file_conditions.append("file_path ILIKE %s")
-        file_params.append(scope_pattern)
-    if tenant_id is not None:
-        file_conditions.append("tenant_id = %s")
-        file_params.append(tenant_id)
-    file_params.append(limit)
-    predicate = high_precision_defect_sql("d")
-
-    file_rows = conn.execute(
-        f"""
-        SELECT
-            file_path,
-            churn_score,
-            cochange_entropy,
-            generated_kind,
-            (
-                SELECT COUNT(DISTINCT g.sha)
-                FROM cortex_git_commits g
-                JOIN cortex_defect_corpus d ON d.sha = g.sha
-                WHERE g.files_changed && ARRAY[cortex_file_signals.file_path]
-                  AND {predicate}
-            ) AS defect_history_count,
-            failure_count
-        FROM cortex_file_signals
-        WHERE {' AND '.join(file_conditions)}
-        ORDER BY churn_score DESC
-        LIMIT %s
-        """,  # type: ignore[arg-type]
-        tuple(file_params),
-    ).fetchall()
-
-    cochange_conditions = ["(file_a ILIKE '%test%' OR file_b ILIKE '%test%')"]
-    cochange_params: list = []
-    if scope_pattern:
-        cochange_conditions.append("(file_a ILIKE %s OR file_b ILIKE %s)")
-        cochange_params.extend([scope_pattern, scope_pattern])
-    if tenant_id is not None:
-        cochange_conditions.append("tenant_id = %s")
-        cochange_params.append(tenant_id)
-
-    cochange_rows = conn.execute(
-        f"""
-        SELECT file_a, file_b, frequency
-        FROM cortex_cochange_pairs
-        WHERE {' AND '.join(cochange_conditions)}
-        ORDER BY frequency DESC
-        LIMIT 10
-        """,  # type: ignore[arg-type]
-        tuple(cochange_params),
-    ).fetchall()
+    store = _as_harvester_store(conn)
+    file_rows = store.test_file_signals(scope=scope, limit=limit, tenant_id=tenant_id)
+    cochange_rows = store.test_cochanges(scope=scope, limit=10, tenant_id=tenant_id)
 
     return {
         "test_files": [
@@ -91,6 +40,12 @@ def get_test_context(
         "scope": scope,
         "status": "ok",
     }
+
+
+def _as_harvester_store(conn: psycopg.Connection | HarvesterStore) -> HarvesterStore:
+    if isinstance(conn, PostgresHarvesterStore) or hasattr(type(conn), "test_file_signals"):
+        return conn
+    return PostgresHarvesterStore(conn)
 
 
 def _build_test_file_context(

@@ -3,7 +3,30 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from chips.compiler.retrieval import retrieve_file_signals
+from chips.compiler.retrieval import retrieve_cochanges, retrieve_file_signals
+
+
+class _Store:
+    def __init__(self) -> None:
+        self.file_signal_calls: list[tuple[list[str], str | None]] = []
+        self.cochange_calls: list[tuple[list[str], int, str | None]] = []
+
+    def file_signals_for_paths(
+        self,
+        files: list[str],
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, float | None, float | None, str | None, int | None, int | None, object]]:
+        self.file_signal_calls.append((files, tenant_id))
+        return [("src/auth.py", 0.8, 0.5, None, 2, 2, None)]
+
+    def cochanges_for_files(
+        self,
+        files: list[str],
+        limit: int = 10,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, str, int, object]]:
+        self.cochange_calls.append((files, limit, tenant_id))
+        return [("src/auth.py", "src/payments.py", 3, None)]
 
 
 def test_retrieve_file_signals_includes_cochange_entropy():
@@ -61,3 +84,29 @@ def test_retrieve_file_signals_includes_cochange_entropy():
             "last_changed_at": None,
         }
     ]
+
+
+def test_retrieve_file_signals_uses_store_boundary_when_store_is_provided():
+    store = _Store()
+
+    with patch("chips.compiler.retrieval.estimate_defect_density", return_value=(1.5, 1333)):
+        result = retrieve_file_signals(store, ["src/auth.py"], tenant_id="tenant-1")
+
+    assert result[0]["file_path"] == "src/auth.py"
+    assert store.file_signal_calls == [(["src/auth.py"], "tenant-1")]
+
+
+def test_retrieve_cochanges_uses_store_boundary_when_store_is_provided():
+    store = _Store()
+
+    result = retrieve_cochanges(store, ["src/auth.py"], limit=7, tenant_id="tenant-1")
+
+    assert result == [
+        {
+            "file_a": "src/auth.py",
+            "file_b": "src/payments.py",
+            "frequency": 3,
+            "last_seen_at": None,
+        }
+    ]
+    assert store.cochange_calls == [(["src/auth.py"], 7, "tenant-1")]

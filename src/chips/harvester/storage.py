@@ -6,7 +6,9 @@ from typing import Protocol
 import psycopg
 
 from chips.harvester.defect_corpus import extract_defect_evidence
+from chips.harvester.defect_corpus import high_precision_defect_sql
 from chips.harvester.git_reader import CommitRecord
+from chips.tenant import build_tenant_scope
 
 
 TRUTH_TABLES = ("cortex_git_commits",)
@@ -59,6 +61,33 @@ class HarvesterStore(Protocol):
     ) -> None: ...
 
     def latest_ingested_sha(self) -> str | None: ...
+
+    def file_signals_for_paths(
+        self,
+        files: list[str],
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, float | None, float | None, str | None, int | None, int | None, object]]: ...
+
+    def cochanges_for_files(
+        self,
+        files: list[str],
+        limit: int = 10,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, str, int, object]]: ...
+
+    def test_file_signals(
+        self,
+        scope: str | None = None,
+        limit: int = 20,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, float | None, float | None, str | None, int | None, int | None]]: ...
+
+    def test_cochanges(
+        self,
+        scope: str | None = None,
+        limit: int = 10,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, str, int]]: ...
 
 
 class PostgresHarvesterStore:
@@ -224,3 +253,121 @@ class PostgresHarvesterStore:
             """
         ).fetchone()
         return row[0] if row else None
+
+    def file_signals_for_paths(
+        self,
+        files: list[str],
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, float | None, float | None, str | None, int | None, int | None, object]]:
+        scoped = build_tenant_scope(["file_path = ANY(%s)"], [files], tenant_id)
+        predicate = high_precision_defect_sql("d")
+        return self._conn.execute(
+            f"""
+            SELECT
+                file_path,
+                churn_score,
+                cochange_entropy,
+                generated_kind,
+                (
+                    SELECT COUNT(DISTINCT g.sha)
+                    FROM cortex_git_commits g
+                    JOIN cortex_defect_corpus d ON d.sha = g.sha
+                    WHERE g.files_changed && ARRAY[cortex_file_signals.file_path]
+                      AND {predicate}
+                ) AS defect_history_count,
+                failure_count,
+                last_changed_at
+            FROM cortex_file_signals
+            WHERE {' AND '.join(scoped.conditions)}
+            """,
+            tuple(scoped.params),
+        ).fetchall()
+
+    def cochanges_for_files(
+        self,
+        files: list[str],
+        limit: int = 10,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, str, int, object]]:
+        scoped = build_tenant_scope(
+            ["(file_a = ANY(%s) OR file_b = ANY(%s))"],
+            [files, files],
+            tenant_id,
+        )
+        return self._conn.execute(
+            f"""
+            SELECT file_a, file_b, frequency, last_seen_at
+            FROM cortex_cochange_pairs
+            WHERE {' AND '.join(scoped.conditions)}
+            ORDER BY frequency DESC
+            LIMIT %s
+            """,
+            (*scoped.params, limit),
+        ).fetchall()
+
+    def test_file_signals(
+        self,
+        scope: str | None = None,
+        limit: int = 20,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, float | None, float | None, str | None, int | None, int | None]]:
+        scope_pattern = f"%{scope}%" if scope else None
+        file_conditions = ["file_path ILIKE '%test%'"]
+        file_params: list[object] = []
+        if scope_pattern:
+            file_conditions.append("file_path ILIKE %s")
+            file_params.append(scope_pattern)
+        if tenant_id is not None:
+            file_conditions.append("tenant_id = %s")
+            file_params.append(tenant_id)
+        file_params.append(limit)
+        predicate = high_precision_defect_sql("d")
+        return self._conn.execute(
+            f"""
+            SELECT
+                file_path,
+                churn_score,
+                cochange_entropy,
+                generated_kind,
+                (
+                    SELECT COUNT(DISTINCT g.sha)
+                    FROM cortex_git_commits g
+                    JOIN cortex_defect_corpus d ON d.sha = g.sha
+                    WHERE g.files_changed && ARRAY[cortex_file_signals.file_path]
+                      AND {predicate}
+                ) AS defect_history_count,
+                failure_count
+            FROM cortex_file_signals
+            WHERE {' AND '.join(file_conditions)}
+            ORDER BY churn_score DESC
+            LIMIT %s
+            """,
+            tuple(file_params),
+        ).fetchall()
+
+    def test_cochanges(
+        self,
+        scope: str | None = None,
+        limit: int = 10,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, str, int]]:
+        scope_pattern = f"%{scope}%" if scope else None
+        cochange_conditions = ["(file_a ILIKE '%test%' OR file_b ILIKE '%test%')"]
+        cochange_params: list[object] = []
+        if scope_pattern:
+            cochange_conditions.append("(file_a ILIKE %s OR file_b ILIKE %s)")
+            cochange_params.extend([scope_pattern, scope_pattern])
+        if tenant_id is not None:
+            cochange_conditions.append("tenant_id = %s")
+            cochange_params.append(tenant_id)
+        cochange_params.append(limit)
+        return self._conn.execute(
+            f"""
+            SELECT file_a, file_b, frequency
+            FROM cortex_cochange_pairs
+            WHERE {' AND '.join(cochange_conditions)}
+            ORDER BY frequency DESC
+            LIMIT %s
+            """,
+            tuple(cochange_params),
+        ).fetchall()

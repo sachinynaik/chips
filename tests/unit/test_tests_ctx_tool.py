@@ -7,6 +7,30 @@ from unittest.mock import patch
 from chips.mcp.tools.tests_ctx import get_test_context
 
 
+class _Store:
+    def __init__(self) -> None:
+        self.test_file_calls: list[tuple[str | None, int, str | None]] = []
+        self.test_cochange_calls: list[tuple[str | None, int, str | None]] = []
+
+    def test_file_signals(
+        self,
+        scope: str | None = None,
+        limit: int = 20,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, float | None, float | None, str | None, int | None, int | None]]:
+        self.test_file_calls.append((scope, limit, tenant_id))
+        return [("src/test_auth.py", 0.8, 0.4, None, 2, 2)]
+
+    def test_cochanges(
+        self,
+        scope: str | None = None,
+        limit: int = 10,
+        tenant_id: str | None = None,
+    ) -> list[tuple[str, str, int]]:
+        self.test_cochange_calls.append((scope, limit, tenant_id))
+        return [("src/test_auth.py", "src/auth.py", 5)]
+
+
 def _conn(file_rows=None, cochange_rows=None):
     conn = MagicMock()
     cursors = []
@@ -226,3 +250,16 @@ def test_tenant_id_omitted_from_both_queries_when_none():
     for call in conn.execute.call_args_list:
         sql, _ = call[0]
         assert "tenant_id" not in sql
+
+
+def test_get_test_context_uses_store_boundary_when_store_is_provided():
+    store = _Store()
+
+    with patch("chips.mcp.tools.tests_ctx.estimate_defect_density", return_value=(2.0, 500)):
+        result = get_test_context(store, scope="auth", limit=5, tenant_id="tenant-1")
+
+    assert result["status"] == "ok"
+    assert result["test_files"][0]["file_path"] == "src/test_auth.py"
+    assert result["cochange_pairs"][0]["frequency"] == 5
+    assert store.test_file_calls == [("auth", 5, "tenant-1")]
+    assert store.test_cochange_calls == [("auth", 10, "tenant-1")]
