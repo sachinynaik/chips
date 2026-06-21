@@ -88,10 +88,16 @@ def test_ingest_updates_file_signals(conn):
 
 def test_ingest_persists_cochange_entropy_for_scattered_files(conn):
     ingestion = GitIngestion(conn)
+    # Each partner co-changes with hot.py twice so it clears the co-change support
+    # threshold (open decision #2: min support 2). A single shared commit is noise
+    # and is deliberately excluded from the entropy signal.
     commits = [
         _make_commit("abc010", ["src/hot.py", "src/a.py"]),
+        _make_commit("abc010b", ["src/hot.py", "src/a.py"]),
         _make_commit("abc011", ["src/hot.py", "src/b.py"]),
+        _make_commit("abc011b", ["src/hot.py", "src/b.py"]),
         _make_commit("abc012", ["src/hot.py", "src/c.py"]),
+        _make_commit("abc012b", ["src/hot.py", "src/c.py"]),
     ]
 
     ingestion.ingest_commits(commits)
@@ -249,3 +255,109 @@ def test_defect_corpus_is_rebuildable_from_git_commits(conn):
     ).fetchall()
 
     assert rebuilt_rows == original_rows
+
+
+def test_all_derived_tables_are_rebuildable_from_git_commits(conn):
+    ingestion = GitIngestion(conn)
+    commits = [
+        CommitRecord(
+            sha="abc101",
+            author="test",
+            committed_at="2026-05-12T12:00:00+00:00",
+            message="fix(auth): closes #201",
+            files_changed=["src/auth.py", "src/session.py"],
+        ),
+        CommitRecord(
+            sha="abc102",
+            author="test",
+            committed_at="2026-05-13T12:00:00+00:00",
+            message="hotfix(auth): incident ABC-202",
+            files_changed=["src/auth.py"],
+        ),
+    ]
+
+    ingestion.ingest_commits(commits)
+
+    original_defects = conn.execute(
+        """
+        SELECT sha, issue_refs, revert_of_sha, has_bug_keyword, has_defect_keyword,
+               has_hotfix_keyword, has_incident_keyword
+        FROM cortex_defect_corpus
+        WHERE sha IN ('abc101', 'abc102')
+        ORDER BY sha
+        """
+    ).fetchall()
+    original_pairs = conn.execute(
+        """
+        SELECT file_a, file_b, frequency
+        FROM cortex_cochange_pairs
+        WHERE (file_a = 'src/auth.py' AND file_b = 'src/session.py')
+           OR (file_a = 'src/session.py' AND file_b = 'src/auth.py')
+        ORDER BY file_a, file_b
+        """
+    ).fetchall()
+    original_signals = conn.execute(
+        """
+        SELECT file_path, churn_score, cochange_entropy, generated_kind
+        FROM cortex_file_signals
+        WHERE file_path IN ('src/auth.py', 'src/session.py')
+        ORDER BY file_path
+        """
+    ).fetchall()
+    original_snapshots = conn.execute(
+        """
+        SELECT basis_sha, file_path, churn_score, cochange_entropy, generated_kind,
+               fragility, fragility_complete, fragility_inputs_present, fragility_inputs_missing
+        FROM cortex_file_signal_snapshots
+        WHERE basis_sha IN ('abc101', 'abc102')
+        ORDER BY basis_sha, file_path
+        """
+    ).fetchall()
+
+    conn.execute("DELETE FROM cortex_defect_corpus")
+    conn.execute("DELETE FROM cortex_cochange_pairs")
+    conn.execute("DELETE FROM cortex_file_signals")
+    conn.execute("DELETE FROM cortex_file_signal_snapshots")
+
+    GitIngestion(PostgresHarvesterStore(conn)).rebuild_derived_from_truth()
+
+    rebuilt_defects = conn.execute(
+        """
+        SELECT sha, issue_refs, revert_of_sha, has_bug_keyword, has_defect_keyword,
+               has_hotfix_keyword, has_incident_keyword
+        FROM cortex_defect_corpus
+        WHERE sha IN ('abc101', 'abc102')
+        ORDER BY sha
+        """
+    ).fetchall()
+    rebuilt_pairs = conn.execute(
+        """
+        SELECT file_a, file_b, frequency
+        FROM cortex_cochange_pairs
+        WHERE (file_a = 'src/auth.py' AND file_b = 'src/session.py')
+           OR (file_a = 'src/session.py' AND file_b = 'src/auth.py')
+        ORDER BY file_a, file_b
+        """
+    ).fetchall()
+    rebuilt_signals = conn.execute(
+        """
+        SELECT file_path, churn_score, cochange_entropy, generated_kind
+        FROM cortex_file_signals
+        WHERE file_path IN ('src/auth.py', 'src/session.py')
+        ORDER BY file_path
+        """
+    ).fetchall()
+    rebuilt_snapshots = conn.execute(
+        """
+        SELECT basis_sha, file_path, churn_score, cochange_entropy, generated_kind,
+               fragility, fragility_complete, fragility_inputs_present, fragility_inputs_missing
+        FROM cortex_file_signal_snapshots
+        WHERE basis_sha IN ('abc101', 'abc102')
+        ORDER BY basis_sha, file_path
+        """
+    ).fetchall()
+
+    assert rebuilt_defects == original_defects
+    assert rebuilt_pairs == original_pairs
+    assert rebuilt_signals == original_signals
+    assert rebuilt_snapshots == original_snapshots

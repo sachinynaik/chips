@@ -56,15 +56,23 @@ def normalized_entropy(frequencies: Iterable[float | int]) -> float:
     return max(0.0, min(normalized, 1.0))
 
 
+# Open decision #2: a co-change pair must reach this support (number of shared
+# commits) before it counts as coupling. A single shared commit is coincidental
+# noise, not a coupling signal. Tunable; default chosen conservatively at 2.
+_DEFAULT_MIN_COCHANGE_SUPPORT = 2
+
+
 def cochange_entropy_for_file(
     file_path: str,
     partner_frequencies: Mapping[str, float | int],
+    *,
+    min_support: int = _DEFAULT_MIN_COCHANGE_SUPPORT,
 ) -> float:
     if classify_generated_kind(file_path) is not None:
         return 0.0
     real_partner_frequencies = [
         frequency
         for partner, frequency in partner_frequencies.items()
-        if classify_generated_kind(partner) is None
+        if classify_generated_kind(partner) is None and frequency >= min_support
     ]
     return normalized_entropy(real_partner_frequencies)

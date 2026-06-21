@@ -48,6 +48,8 @@ def retrieve_file_signals(
             code_version=None,
             observed_changed_at=row[6],
             dopants=[],
+            churn_score=row[1],
+            cochange_entropy=row[2],
         )
         results.append(
             {
