@@ -150,6 +150,27 @@ def test_fragility_goes_to_soft():
     assert "def456" in soft[0][1]
 
 
+def test_yield_score_never_becomes_a_brief_finding():
+    # Locked invariant (build-brief two-consumers rule): the Yield score is
+    # external/demo-only and must NEVER enter the gate-facing brief findings.
+    # Fragility is the gate-relevant signal; Yield is not. This locks the
+    # mechanism so a future change cannot silently leak Yield into the gate path.
+    findings = {
+        "yield_score": {"score": 3.2, "mode": "raw", "calibrated": False},
+        "fragility": {
+            "history_count": 1,
+            "matched_commits": ["abc123"],
+            "reason": "history_found",
+        },
+    }
+    hard, soft = _extract_brief_signals([_mem(findings)])
+
+    all_text = " ".join(text for _, text in hard + soft).lower()
+    assert "yield" not in all_text
+    # Fragility still surfaces — it is the gate-relevant signal.
+    assert any("prior defect-linked fixes" in text for _, text in soft)
+
+
 def test_uncovered_changes_goes_to_soft():
     # uncovered_changes is a dict[path → info], not a list
     findings = {"uncovered_changes": {

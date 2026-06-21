@@ -99,12 +99,20 @@ def test_compute_file_signals_has_zero_entropy_for_single_stable_partner():
 
 def test_compute_file_signals_entropy_increases_with_scattered_partners():
     reader = GitReader.__new__(GitReader)
+    # Each partner co-changes with foo.py twice so it clears the support threshold
+    # (open decision #2: min support 2); single shared commits are noise.
     commits = [
         CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
                      message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="a2", author="A", committed_at="2026-05-01T01:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
         CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
                      message="m", files_changed=["foo.py", "baz.py"]),
+        CommitRecord(sha="b2", author="B", committed_at="2026-05-02T01:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
         CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
+                     message="m", files_changed=["foo.py", "qux.py"]),
+        CommitRecord(sha="c2", author="C", committed_at="2026-05-03T01:00:00",
                      message="m", files_changed=["foo.py", "qux.py"]),
     ]
 
@@ -116,12 +124,19 @@ def test_compute_file_signals_entropy_increases_with_scattered_partners():
 
 def test_compute_file_signals_entropy_is_maximal_for_uniform_partner_distribution():
     reader = GitReader.__new__(GitReader)
+    # Three partners, each at support 2 -> uniform distribution -> maximal entropy.
     commits = [
         CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
                      message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="a2", author="A", committed_at="2026-05-01T01:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
         CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
                      message="m", files_changed=["foo.py", "baz.py"]),
+        CommitRecord(sha="b2", author="B", committed_at="2026-05-02T01:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
         CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
+                     message="m", files_changed=["foo.py", "qux.py"]),
+        CommitRecord(sha="c2", author="C", committed_at="2026-05-03T01:00:00",
                      message="m", files_changed=["foo.py", "qux.py"]),
     ]
 
@@ -132,12 +147,20 @@ def test_compute_file_signals_entropy_is_maximal_for_uniform_partner_distributio
 
 def test_compute_file_signals_entropy_is_lower_for_concentrated_partner_distribution():
     reader = GitReader.__new__(GitReader)
+    # All partners are at support >= 2 so the threshold keeps them; the difference is
+    # purely the shape of the distribution (uniform vs concentrated on one partner).
     uniform_commits = [
         CommitRecord(sha="a", author="A", committed_at="2026-05-01T00:00:00",
                      message="m", files_changed=["foo.py", "bar.py"]),
+        CommitRecord(sha="a2", author="A", committed_at="2026-05-01T01:00:00",
+                     message="m", files_changed=["foo.py", "bar.py"]),
         CommitRecord(sha="b", author="B", committed_at="2026-05-02T00:00:00",
                      message="m", files_changed=["foo.py", "baz.py"]),
+        CommitRecord(sha="b2", author="B", committed_at="2026-05-02T01:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
         CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
+                     message="m", files_changed=["foo.py", "qux.py"]),
+        CommitRecord(sha="c2", author="C", committed_at="2026-05-03T01:00:00",
                      message="m", files_changed=["foo.py", "qux.py"]),
     ]
     concentrated_commits = [
@@ -148,6 +171,8 @@ def test_compute_file_signals_entropy_is_lower_for_concentrated_partner_distribu
         CommitRecord(sha="c", author="C", committed_at="2026-05-03T00:00:00",
                      message="m", files_changed=["foo.py", "bar.py"]),
         CommitRecord(sha="d", author="D", committed_at="2026-05-04T00:00:00",
+                     message="m", files_changed=["foo.py", "baz.py"]),
+        CommitRecord(sha="d2", author="D", committed_at="2026-05-04T01:00:00",
                      message="m", files_changed=["foo.py", "baz.py"]),
     ]
 

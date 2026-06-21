@@ -88,10 +88,12 @@ def test_ingest_commits_writes_cumulative_cochange_entropy_into_file_signals():
     def execute(sql, params):
         cursor = MagicMock()
         if "SELECT file_a, file_b, frequency" in sql:
+            # Frequency 2 so each partner clears the co-change support threshold
+            # (open decision #2: min support 2); single co-changes are noise.
             cursor.fetchall.return_value = [
-                ("src/auth.py", "src/a.py", 1),
-                ("src/auth.py", "src/b.py", 1),
-                ("src/auth.py", "src/c.py", 1),
+                ("src/auth.py", "src/a.py", 2),
+                ("src/auth.py", "src/b.py", 2),
+                ("src/auth.py", "src/c.py", 2),
             ]
         else:
             cursor.fetchall.return_value = []
