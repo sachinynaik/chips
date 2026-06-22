@@ -16,6 +16,27 @@ import json
 
 _FINDING_HASH_LEN = 12
 
+#: Known evidence-id kind prefixes (the citable kinds in v1 + constraints). A legitimate
+#: citation must carry one of these; anything else is not a canonical evidence identity.
+_EVIDENCE_ID_PREFIXES = frozenset({"con", "mem", "diff", "find", "struct"})
+
+
+def is_evidence_id(value: object) -> bool:
+    """True iff ``value`` is a well-formed, stable evidence identity (``<kind>:<natural-key>``).
+
+    The compression-contract identity rule (note §0/§I4): only a canonical evidence id may be
+    cited as a source. This predicate rejects everything that is *not* such an id — compressed
+    projection text (prose carries whitespace / has no kind prefix) and transport handles
+    (a non-``str`` such as an EvidencePointer) — so the ban guard can fail closed on smuggled
+    projection material rather than merely on ids that fail to resolve.
+    """
+    if not isinstance(value, str):
+        return False
+    if any(ch.isspace() for ch in value):
+        return False
+    kind, sep, key = value.partition(":")
+    return bool(sep) and kind in _EVIDENCE_ID_PREFIXES and bool(key)
+
 
 def make_evidence_id(kind: str, natural_key: str) -> str:
     """Compose a stable evidence ID from a kind and a natural key.
