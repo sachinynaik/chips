@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from chips.compiler.evidence import make_evidence_id
+from chips.compiler.evidence import is_evidence_id, make_evidence_id
+from chips.compiler.evidence_pointer import (
+    EvidencePointer,
+    NonIdentityCitationError,
+    dereference,
+)
 from chips.compiler.models import Constraint, EvidenceBundle, EvidenceItem, SoftContextItem
 
 # SoftContextItem.category → EvidenceItem.kind for the citable kinds in v1.
@@ -109,3 +114,32 @@ def assemble_evidence_bundle(
         constraints=constraint_items,
         evidence=evidence_items,
     )
+
+
+def resolve_source_citation(citation: object, bundle: EvidenceBundle) -> EvidenceItem:
+    """Resolve a persisted source citation to its lossless EvidenceItem, enforcing the I3 ban.
+
+    This is the Option-A enforcement point: the EvidenceBundle is where ``evidence_id`` *becomes*
+    the citable identity, so guarding here protects every downstream consumer (decision log,
+    write-back, the future gate) by construction rather than at each exit by vigilance.
+
+    Two fail-closed checks, in order:
+
+    1. **Identity, not transport** (note §0 / I4) — the citation must be a canonical evidence id.
+       Compressed projection text or a transport handle (e.g. an :class:`EvidencePointer`) cited
+       *as* the identity is rejected with :class:`NonIdentityCitationError`. This is the I3 ban's
+       teeth: "is this a legitimate id?", not merely "does it resolve?".
+    2. **Dereference at point of use** (note §I1/§I2) — the id is resolved against *this* bundle
+       via :meth:`EvidenceBundle.by_id`; an id absent from the bundle at resolve time (rebuilt,
+       pruned, a different instance) raises :class:`DanglingPointerError`. The check is here, at
+       the moment of resolution, never assumed from citation-creation time.
+    """
+    if not is_evidence_id(citation):
+        raise NonIdentityCitationError(
+            f"source citation {citation!r} is not a canonical evidence identity; compressed "
+            f"projections and transport handles may not be cited as a source artifact"
+        )
+    pointer = EvidencePointer(artifact_id=citation)  # type: ignore[arg-type]  # narrowed by is_evidence_id
+    item = dereference(pointer, bundle.by_id)
+    assert isinstance(item, EvidenceItem)  # bundle.by_id only ever yields EvidenceItem
+    return item
