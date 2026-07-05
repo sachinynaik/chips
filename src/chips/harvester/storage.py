@@ -31,6 +31,10 @@ def is_derived_table(table_name: str) -> bool:
 class HarvesterStore(Protocol):
     def append_git_commits(self, commits: list[CommitRecord]) -> None: ...
 
+    def truth_commits(self) -> list[CommitRecord]: ...
+
+    def clear_derived_tables(self) -> None: ...
+
     def rebuild_defect_corpus(self, commits: list[CommitRecord]) -> None: ...
 
     def rebuild_defect_corpus_for_shas(self, shas: list[str]) -> None: ...
@@ -113,6 +117,32 @@ class PostgresHarvesterStore:
                     commit.files_changed,
                 ),
             )
+
+    def truth_commits(self) -> list[CommitRecord]:
+        rows = self._conn.execute(
+            """
+            SELECT sha, author, committed_at, message, files_changed
+            FROM cortex_git_commits
+            ORDER BY committed_at ASC, sha ASC
+            """
+        ).fetchall()
+        return [
+            CommitRecord(
+                sha=row[0],
+                author=row[1],
+                committed_at=row[2].isoformat() if hasattr(row[2], "isoformat") else row[2],
+                message=row[3],
+                files_changed=row[4],
+            )
+            for row in rows
+        ]
+
+    def clear_derived_tables(self) -> None:
+        self._conn.execute("DELETE FROM cortex_defect_corpus")
+        self._conn.execute("DELETE FROM cortex_cochange_pairs")
+        self._conn.execute("DELETE FROM cortex_file_signals")
+        self._conn.execute("DELETE FROM cortex_file_signal_snapshots")
+        self._conn.commit()
 
     def rebuild_defect_corpus(self, commits: list[CommitRecord]) -> None:
         for commit in commits:

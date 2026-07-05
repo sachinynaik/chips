@@ -45,6 +45,8 @@ class _FakeStore:
     appended_commits: list[list[CommitRecord]] = field(default_factory=list)
     rebuilt_defect_batches: list[list[CommitRecord]] = field(default_factory=list)
     rebuilt_defect_shas: list[list[str]] = field(default_factory=list)
+    truth_commits_rows: list[CommitRecord] = field(default_factory=list)
+    cleared_derived: int = 0
     merged_pairs: list[list[tuple[str, str, int]]] = field(default_factory=list)
     upserted_signals: list[dict] = field(default_factory=list)
     snapshots: list[dict] = field(default_factory=list)
@@ -87,6 +89,12 @@ class _FakeStore:
 
     def latest_ingested_sha(self) -> str | None:
         return None
+
+    def truth_commits(self) -> list[CommitRecord]:
+        return list(self.truth_commits_rows)
+
+    def clear_derived_tables(self) -> None:
+        self.cleared_derived += 1
 
 
 def test_git_ingestion_uses_store_boundary_for_truth_and_derived_writes():
@@ -189,3 +197,39 @@ def test_daemon_reads_latest_sha_through_store_boundary():
 
     store.latest_ingested_sha.assert_called_once_with()
     mock_reader_cls.return_value.commits_since.assert_called_once()
+
+
+def test_rebuild_derived_from_truth_replays_commits_one_by_one():
+    store = _FakeStore(
+        truth_commits_rows=[
+            _commit("abc001", ["src/a.py", "src/b.py"]),
+            _commit("abc002", ["src/a.py"]),
+        ]
+    )
+    ingestion = GitIngestion(store)
+
+    original = GitIngestion._compute_stored_cochange_entropy
+    try:
+        GitIngestion._compute_stored_cochange_entropy = lambda self, file_path, generated_kind=None: 0.0
+        from chips.harvester.ingestion import GitReader
+
+        original_compute = GitReader._compute_file_signals
+        GitReader._compute_file_signals = lambda *args, **kwargs: [
+            FileSignal(
+                file_path=kwargs.get("commits", args[1])[0].files_changed[0] if args else "src/a.py",
+                churn_count=1,
+                churn_score=1.0,
+                cochange_entropy=0.0,
+                generated_kind=None,
+            )
+        ]
+        try:
+            ingestion.rebuild_derived_from_truth()
+        finally:
+            GitReader._compute_file_signals = original_compute
+    finally:
+        GitIngestion._compute_stored_cochange_entropy = original
+
+    assert store.cleared_derived == 1
+    assert store.rebuilt_defect_shas == [["abc001"], ["abc002"]]
+    assert [snap["basis_sha"] for snap in store.snapshots] == ["abc001", "abc002"]

@@ -22,6 +22,14 @@ class GitIngestion:
         self._upsert_cochange_pairs(commits)
         self._upsert_file_signals(commits)
 
+    def rebuild_derived_from_truth(self) -> None:
+        commits = self._store.truth_commits()
+        self._store.clear_derived_tables()
+        for commit in commits:
+            self._upsert_defect_corpus([commit])
+            self._upsert_cochange_pairs([commit])
+            self._upsert_file_signals([commit])
+
     def _upsert_commits(self, commits: list[CommitRecord]) -> None:
         self._store.append_git_commits(commits)
 
@@ -35,24 +43,27 @@ class GitIngestion:
 
     def _upsert_file_signals(self, commits: list[CommitRecord]) -> None:
         reader = GitReader.__new__(GitReader)
-        signals = reader._compute_file_signals(commits)
-        basis_sha = commits[-1].sha
-        for signal in signals:
-            generated_kind = signal.generated_kind or classify_generated_kind(signal.file_path)
-            cochange_entropy = self._compute_stored_cochange_entropy(signal.file_path, generated_kind)
-            self._store.upsert_file_signal(
-                file_path=signal.file_path,
-                churn_score=signal.churn_score,
-                cochange_entropy=cochange_entropy,
-                generated_kind=generated_kind,
-            )
-            self._snapshot_file_signal(
-                basis_sha=basis_sha,
-                file_path=signal.file_path,
-                churn_score=signal.churn_score,
-                cochange_entropy=cochange_entropy,
-                generated_kind=generated_kind,
-            )
+        # Apply file-signal deltas commit-by-commit so replay from cortex_git_commits
+        # reconstructs the exact same aggregates and snapshots. Batch-boundary
+        # semantics are not stored in truth; per-commit replay is.
+        for commit in commits:
+            signals = reader._compute_file_signals([commit])
+            for signal in signals:
+                generated_kind = signal.generated_kind or classify_generated_kind(signal.file_path)
+                cochange_entropy = self._compute_stored_cochange_entropy(signal.file_path, generated_kind)
+                self._store.upsert_file_signal(
+                    file_path=signal.file_path,
+                    churn_score=signal.churn_score,
+                    cochange_entropy=cochange_entropy,
+                    generated_kind=generated_kind,
+                )
+                self._snapshot_file_signal(
+                    basis_sha=commit.sha,
+                    file_path=signal.file_path,
+                    churn_score=signal.churn_score,
+                    cochange_entropy=cochange_entropy,
+                    generated_kind=generated_kind,
+                )
 
     def _snapshot_file_signal(
         self,
