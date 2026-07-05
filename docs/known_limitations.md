@@ -160,14 +160,35 @@ findings empty) is now distinguishable from a non-result, upholding "Evidence > 
 
 ---
 
-## L11 — Several enrichment analyzers swallowed failures — ✅ MOSTLY RESOLVED
+## L11 — Several enrichment analyzers swallowed failures — ✅ SUBSTANTIALLY RESOLVED
 
-> **Resolved for the listed analyzers.** `semgrep`, `security` (bandit),
-> `architecture` (import-linter), `clones` (jscpd), `complexity` (lizard),
-> and `joern` now expose truthful analyzer status and the pipeline propagates it
-> via `EnrichmentResult.analyzer_status`. Empty findings no longer automatically
-> imply a clean run for these analyzers.
+> **Resolved for the currently audited analyzers/enrichers.** `semgrep`,
+> `security` (bandit), `architecture` (import-linter), `clones` (jscpd),
+> `complexity` (lizard), `joern`, `api_surface` (griffe), `dead_code`
+> (vulture), `coverage_reader`, `ownership`, `semble`, `graphify`,
+> `scope_memories`, and `cochange` now expose truthful status and the pipeline
+> propagates it through `EnrichmentResult.analyzer_status` where applicable.
+> Empty results no longer automatically imply a clean run for these audited
+> surfaces.
 >
 > **Remaining caution:** this closes the false-clean behavior for the analyzers
 > named in this limitation. It does not claim every present or future analyzer in
 > the repo already follows the contract without audit.
+
+---
+
+## L12 — Anti-regression review queue is durable, but not yet verifier-driven end to end
+
+**Location:** `src/chips/mcp/tools/hypotheses.py`,
+`src/chips/compiler/constraint_candidate_repository.py`  
+**Behavior:** Rejected hypotheses now persist durable `ConstraintCandidate`
+review rows and can be listed/reviewed later, but CHIPS still does not connect
+that queue to verifier outcomes or automatic reinforcement/retirement logic.
+Human review and manual promotion remain the controlling mechanism.  
+**When it becomes a defect:** The first workflow that expects accepted/rejected
+execution outcomes to automatically retire constraints, reinforce known-good
+signals, or otherwise close the anti-regression loop without explicit operator
+action.  
+**Follow-up:** Tie queue review semantics to the eventual verifier/human-outcome
+path, while preserving the invariant that no active constraint is created
+without manual confirmation through `add_constraint`.

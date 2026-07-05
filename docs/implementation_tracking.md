@@ -63,8 +63,8 @@ It is deliberately implementation-facing. If a capability is not in code, this d
 
 **Partial**
 
-- EvidenceBundle assembly and MCP wire serialization are built, but hypothesis submission and write-back are not yet end-to-end.
-- Constraint memory exists in part, but manual operator/agent surfaces are incomplete.
+- EvidenceBundle assembly, MCP wire serialization, and deterministic hypothesis submission/ranking are built, but the anti-regression loop is not yet verifier-driven end to end.
+- Constraint memory exists with manual operator/agent surfaces, but learned write-back remains only partially operational.
 
 **Blocked**
 
@@ -79,11 +79,16 @@ It is deliberately implementation-facing. If a capability is not in code, this d
 - Defect-corpus capture
 - File signals persistence
 - Versioned file-signal snapshots
+- Truth-replay rebuild path for the current derived harvester tables from `cortex_git_commits`
 - Early yield / fragility / assay substrate
+- GitHub issue-metadata capture (`cortex_issue_refs`, injectable-client fetcher) feeding query-time defect-label tiers T1-T4
+- Revert-introduced defect credit in `DefectPredictor.predict`
+
+  (both bullets above verified behaviorally 2026-07-05 in the WSL harness, 23/23 tests green)
 
 **Partial**
 
-- Some enrichment analyzers are real; several still degrade to false-clean empty output on failure.
+- Many enrichment analyzers and retrieval-side enrichers now expose truthful status; the remaining audit surface is narrower and more peripheral.
 - Co-change exists as pair capture and downstream signals, but not as the target graph-native coupling model.
 - The first vertical exists as a signal pipeline, not as the full end-state fire/gate system.
 
@@ -113,13 +118,15 @@ It is deliberately implementation-facing. If a capability is not in code, this d
 - Phase 1 evidence and hypothesis contract is locked
 - Primitive evidence/hypothesis data types and scoring substrate exist
 - EvidenceBundle assembly at build time and MCP wire serialization are built
+- MCP hypothesis submission now ranks hypotheses deterministically against the wire `EvidenceBundle`
+- Rejected-hypothesis write-back now emits and durably queues `ConstraintCandidate` review payloads for manual promotion
 - Constraint ideas and retrieval-side use are defined and partly present
 - Constraint MCP/operator surface exists for inspect/add/retire flows
+- Constraint-candidate review queue exists for inspect/review flows
 
 **Partial**
 
-- Hypothesis submission and write-back loop are not yet fully wired
-- Learned anti-regression memory is not yet fully operational as the controlling write-back loop
+- Learned anti-regression memory is not yet fully operational as the controlling verifier-backed write-back loop
 
 ### L5 — Learning loop
 
@@ -207,10 +214,8 @@ Use `05_06_tool_adoption_roadmap.md` and ADR-002..ADR-008 rather than treating r
 
 ### Partial and should be completed
 
-- Hypothesis submission and write-back wiring
-- Constraint write-back and review-queue path
+- Verifier-linked anti-regression write-back
 - Remaining harvester / enrichment reliability gaps
-- Rebuildability and truth-vs-derived enforcement on the harvester side
 
 ### Blocked by explicit prerequisites
 
@@ -233,12 +238,12 @@ This section is the short list of load-bearing unfinished work, not an exhaustiv
 
 | Gap | Why it matters | Current source |
 |---|---|---|
-| Hypothesis submission/write-back not fully wired | blocks ranked hypotheses from becoming an operational loop | `31_05_codex_remediation_plan.md`, Phase 1 contract |
-| Constraint MCP surface missing | anti-regression memory cannot close the loop safely | `known_limitations.md` L9 |
-| Some analyzers still fail false-clean | weakens evidence quality silently | `known_limitations.md` L11 |
+| Anti-regression loop is not yet verifier-driven end to end | ranked hypotheses can now be queued and reviewed, but the system still lacks verifier-backed automatic reinforcement/retirement semantics | Phase 1 contract, current MCP surface |
+| Some enrichment contracts still need audit | the main false-clean paths are fixed, but the entire enrichment surface is not yet proven truthful end to end | `known_limitations.md` L11 |
 | Learning loop blocked on verifier | prevents any honest reward/mastery/OPE claims | execution ledger |
 | Gate/Foundry not built | target safety/control plane does not exist yet | A0 + design_docs |
 | Target memory architecture not built | current store is still the built simplification | A0 + design_docs |
+| Harvester daemon is not deployed/running anywhere on the dev machine | defect-corpus and signal baselines only accumulate where the daemon runs; SpaceMate history is an unrecoverable baseline if not captured | `design_docs/05_07/chips-defect-corpus-harvest-spec.md` Gap A |
 
 ## 6. Next slice by layer
 
@@ -247,10 +252,10 @@ This is the short operational queue by layer. It is intentionally concrete and s
 | Layer | Next slice | Why this is next | Constraint |
 |---|---|---|---|
 | L0 Governance | Keep this doc, A0, and the ledger aligned when layer status changes | prevents doc drift from becoming false truth | do not restate target ambition as built state |
-| L1 Runtime foundation | Finish hypothesis submission/write-back wiring and close remaining runtime integration seams | this turns the contract into a live operational path | must respect ledger blocked states |
-| L2 Harvester / signals | Enforce rebuildability and derived-vs-truth boundaries; continue Track 1 signal completion | this is the active vertical and highest-value code path | stay on Postgres/pgvector until trigger conditions change |
+| L1 Runtime foundation | Connect the queued hypothesis/constraint review path to verifier-backed outcomes without violating the ledger gates | the deterministic submission and durable review surfaces are now real; the remaining gap is end-to-end loop closure | must respect ledger blocked states |
+| L2 Harvester / signals | Continue Track 1 signal completion and tighten the remaining enrichment/reliability surface | the main truth-vs-derived boundary and replay path are now explicit; the remaining work is narrower | stay on Postgres/pgvector until trigger conditions change |
 | L3 Observability | Keep Grafana and metrics-authority surfaces honest; avoid building blocked trend consumers early | observability is useful now, but only for active signals | no reward-consumer surfaces before verifier-backed metrics exist |
-| L4 Constraints / anti-regression | Finish write-back and review-queue plumbing on top of the now-built MCP/operator surface | closes the operator-safe anti-regression loop | human-confirm invariants stay intact |
+| L4 Constraints / anti-regression | Connect the now-built MCP/operator + hypothesis + review-queue surfaces into the verifier-backed anti-regression loop | closes the operator-safe anti-regression loop | human-confirm invariants stay intact |
 | L5 Learning loop | Do not code reward/mastery/OPE/online-bandit until verifier unlocks them | avoids theater metrics and fake adaptivity | execution ledger is the gate |
 | L6 Compact context | Only promote compact-context behavior after its explicit gates pass | measured token win alone is not enough | honor normalization and promotion gates |
 | L7 Target gate | Keep as paper design until Track 2 P0 exists | protects against building the wrong gate too early | no gate code before P0 |
@@ -266,7 +271,7 @@ This is the short operational queue by layer. It is intentionally concrete and s
 - Keep the current substrate simplifiable; avoid deepening lock-in unnecessarily.
 - A gap stays a gap: do not rename partial or aspirational work as shipped.
 
-## 7. Recommended reading order
+## 8. Recommended reading order
 
 For a new implementation session:
 
@@ -283,7 +288,7 @@ Then branch by concern:
 - observability: `02_06_observability_analysis_architecture.md`
 - tools and spikes: `05_06_tool_adoption_roadmap.md`
 
-## 8. Maintenance rule
+## 9. Maintenance rule
 
 Update this document when one of these changes:
 
