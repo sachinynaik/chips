@@ -149,6 +149,24 @@ class ConstraintCandidate:
 
 
 @dataclass(frozen=True)
+class QueuedConstraintCandidate:
+    id: UUID
+    tenant_id: str | None
+    scope: str | None
+    claim: str
+    mechanism: str
+    cited_evidence: list[str]
+    source_brief_id: UUID
+    source_hypothesis_id: str
+    proposed_kind: ConstraintKind
+    proposed_target: dict = field(default_factory=dict)
+    status: str = "pending"
+    promoted_constraint_id: UUID | None = None
+    created_at: datetime | None = None
+    reviewed_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class Constraint:
     """A cortex_constraints row: a durable, scoped policy artifact (Phase 0).
 
