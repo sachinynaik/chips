@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from chips.harvester.enrichment.ownership import CodeownersParser
 
@@ -178,4 +179,31 @@ def test_empty_file_paths_returns_empty_owners_by_file(tmp_path: Path) -> None:
 def test_empty_file_paths_no_codeowners_returns_false_available(tmp_path: Path) -> None:
     result = CodeownersParser(str(tmp_path)).analyze([])
     assert result["codeowners_available"] is False
+    assert result["owners_by_file"] == {}
+
+
+def test_last_status_defaults_to_skipped_before_run(tmp_path: Path) -> None:
+    assert CodeownersParser(str(tmp_path)).last_status == "skipped"
+
+
+def test_last_status_skipped_when_no_codeowners(tmp_path: Path) -> None:
+    parser = CodeownersParser(str(tmp_path))
+    parser.analyze(["src/foo.py"])
+    assert parser.last_status == "skipped"
+
+
+def test_last_status_ok_when_codeowners_available(tmp_path: Path) -> None:
+    _write_codeowners(tmp_path / ".github", "* @org/team\n")
+    parser = CodeownersParser(str(tmp_path))
+    parser.analyze(["src/foo.py"])
+    assert parser.last_status == "ok"
+
+
+def test_last_status_failed_when_codeowners_parse_crashes(tmp_path: Path) -> None:
+    _write_codeowners(tmp_path / ".github", "* @org/team\n")
+    parser = CodeownersParser(str(tmp_path))
+    with patch.object(parser, "_parse_rules", side_effect=RuntimeError("boom")):
+        result = parser.analyze(["src/foo.py"])
+    assert parser.last_status == "failed"
+    assert result["codeowners_available"] is True
     assert result["owners_by_file"] == {}

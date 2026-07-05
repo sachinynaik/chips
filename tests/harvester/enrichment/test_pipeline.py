@@ -285,3 +285,69 @@ def test_pipeline_records_joern_status():
     pipeline._joern = joern
     result = pipeline.enrich(_commit(), "auth")
     assert result.analyzer_status["joern"] == "not_installed"
+
+
+def test_pipeline_records_coverage_and_ownership_status():
+    from chips.harvester.enrichment.coverage_reader import CoverageReader
+    from chips.harvester.enrichment.ownership import CodeownersParser
+
+    coverage = MagicMock(spec=CoverageReader)
+    coverage.analyze.return_value = {"coverage_available": False, "files": {}}
+    coverage.last_status = "failed"
+    ownership = MagicMock(spec=CodeownersParser)
+    ownership.analyze.return_value = {
+        "codeowners_available": True,
+        "owners_by_file": {},
+        "cross_team_change": False,
+        "all_owners": [],
+    }
+    ownership.last_status = "ok"
+
+    pipeline = _pipeline()
+    pipeline._coverage_reader = coverage
+    pipeline._ownership = ownership
+
+    result = pipeline.enrich(_commit(), "auth")
+
+    assert result.analyzer_status["coverage"] == "failed"
+    assert result.analyzer_status["ownership"] == "ok"
+
+
+def test_pipeline_records_semble_graphify_scope_and_cochange_status():
+    from chips.harvester.enrichment.semble import SembleEnricher
+    from chips.harvester.enrichment.graphify import GraphifyEnricher
+    from chips.harvester.enrichment.scope_memories import ScopeMemoryFetcher
+    from chips.harvester.enrichment.cochange import CochangeFetcher
+
+    semble = MagicMock(spec=SembleEnricher)
+    semble.enrich.return_value = []
+    semble.last_status = "failed"
+    graphify = MagicMock(spec=GraphifyEnricher)
+    graphify.enrich.return_value = None
+    graphify.last_status = "not_installed"
+    scope_memories = MagicMock(spec=ScopeMemoryFetcher)
+    scope_memories.fetch.return_value = []
+    scope_memories.last_status = "ok"
+    cochange = MagicMock(spec=CochangeFetcher)
+    cochange.fetch.return_value = []
+    cochange.last_status = "failed"
+
+    conn = MagicMock()
+    count_cursor = MagicMock()
+    count_cursor.fetchone.return_value = (0,)
+    recent_cursor = MagicMock()
+    recent_cursor.fetchall.return_value = []
+    conn.execute.side_effect = [count_cursor, recent_cursor]
+
+    pipeline = _pipeline(conn_factory=lambda: conn)
+    pipeline._semble = semble
+    pipeline._graphify = graphify
+    pipeline._scope_memories = scope_memories
+    pipeline._cochange = cochange
+
+    result = pipeline.enrich(_commit(), "auth")
+
+    assert result.analyzer_status["semble"] == "failed"
+    assert result.analyzer_status["graphify"] == "not_installed"
+    assert result.analyzer_status["scope_memories"] == "ok"
+    assert result.analyzer_status["cochange"] == "failed"

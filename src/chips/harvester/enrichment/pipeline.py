@@ -117,6 +117,9 @@ class EnrichmentPipeline:
         line_coverage: dict = {}
         if self._coverage_reader is not None:
             line_coverage = self._coverage_reader.analyze(commit.files_changed)
+            analyzer_status["coverage"] = getattr(
+                self._coverage_reader, "last_status", AnalyzerStatus.OK.value
+            )
 
         architecture_violations: list[dict] = []
         if self._architecture is not None:
@@ -135,6 +138,9 @@ class EnrichmentPipeline:
         ownership: dict = {}
         if self._ownership is not None:
             ownership = self._ownership.analyze(commit.files_changed)
+            analyzer_status["ownership"] = getattr(
+                self._ownership, "last_status", AnalyzerStatus.OK.value
+            )
 
         similar_commits: list[dict] = []
         if self._code_embedder is not None and self._conn_factory is not None:
@@ -145,7 +151,13 @@ class EnrichmentPipeline:
                 conn.close()
 
         related_symbols = self._semble.enrich(commit.files_changed, diff_content)
+        analyzer_status["semble"] = getattr(
+            self._semble, "last_status", AnalyzerStatus.OK.value
+        )
         community_context = self._graphify.enrich(scope)
+        analyzer_status["graphify"] = getattr(
+            self._graphify, "last_status", AnalyzerStatus.OK.value
+        )
 
         refactoring_type = self._refactoring.detect(diff_content)
         cpg_findings = self._joern.analyze(commit.files_changed)
@@ -167,6 +179,12 @@ class EnrichmentPipeline:
                 )
                 scope_memories = self._scope_memories.fetch(conn, scope)
                 cochange_pairs = self._cochange.fetch(conn, commit.files_changed)
+                analyzer_status["scope_memories"] = getattr(
+                    self._scope_memories, "last_status", AnalyzerStatus.OK.value
+                )
+                analyzer_status["cochange"] = getattr(
+                    self._cochange, "last_status", AnalyzerStatus.OK.value
+                )
             finally:
                 conn.close()
 

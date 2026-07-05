@@ -3,6 +3,8 @@ from __future__ import annotations
 import fnmatch
 from pathlib import Path
 
+from chips.harvester.enrichment.models import AnalyzerStatus
+
 
 _CODEOWNERS_LOCATIONS = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"]
 
@@ -13,6 +15,11 @@ class CodeownersParser:
     def __init__(self, repo_path: str) -> None:
         self._repo_path = Path(repo_path)
         self._codeowners_path: Path | None = self._find_codeowners()
+        self._last_status: str = AnalyzerStatus.SKIPPED.value
+
+    @property
+    def last_status(self) -> str:
+        return self._last_status
 
     # ------------------------------------------------------------------
     # Public API
@@ -32,6 +39,7 @@ class CodeownersParser:
         available = self._codeowners_path is not None
 
         if not available:
+            self._last_status = AnalyzerStatus.SKIPPED.value
             return {
                 "codeowners_available": False,
                 "owners_by_file": {},
@@ -39,7 +47,16 @@ class CodeownersParser:
                 "all_owners": [],
             }
 
-        rules = self._parse_rules()
+        try:
+            rules = self._parse_rules()
+        except Exception:  # noqa: BLE001
+            self._last_status = AnalyzerStatus.FAILED.value
+            return {
+                "codeowners_available": True,
+                "owners_by_file": {},
+                "cross_team_change": False,
+                "all_owners": [],
+            }
 
         owners_by_file: dict[str, list[str]] = {}
         for fp in file_paths:
@@ -52,6 +69,7 @@ class CodeownersParser:
         owner_sets = [frozenset(v) for v in owners_by_file.values()]
         cross_team = len(set(owner_sets)) > 1 if owner_sets else False
 
+        self._last_status = AnalyzerStatus.OK.value
         return {
             "codeowners_available": True,
             "owners_by_file": owners_by_file,

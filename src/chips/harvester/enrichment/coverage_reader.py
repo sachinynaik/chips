@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from chips.harvester.enrichment.models import AnalyzerStatus
+
 
 class CoverageReader:
     """Read existing .coverage artifacts to report line-level coverage for changed files.
@@ -12,6 +14,11 @@ class CoverageReader:
 
     def __init__(self, repo_path: str) -> None:
         self._repo_path = repo_path
+        self._last_status: str = AnalyzerStatus.SKIPPED.value
+
+    @property
+    def last_status(self) -> str:
+        return self._last_status
 
     def analyze(
         self,
@@ -41,6 +48,7 @@ class CoverageReader:
             }
         """
         _EMPTY = {"coverage_available": False, "files": {}}
+        self._last_status = AnalyzerStatus.SKIPPED.value
 
         # Only .py files are relevant
         py_files = [f for f in file_paths if f.endswith(".py")]
@@ -54,6 +62,7 @@ class CoverageReader:
         try:
             from coverage import Coverage  # type: ignore[import]
         except (ImportError, TypeError):
+            self._last_status = AnalyzerStatus.NOT_INSTALLED.value
             return _EMPTY
 
         try:
@@ -61,6 +70,7 @@ class CoverageReader:
             cov.load()
             data = cov.get_data()
         except Exception:
+            self._last_status = AnalyzerStatus.FAILED.value
             return _EMPTY
 
         measured = {os.path.abspath(p) for p in (data.measured_files() or [])}
@@ -110,6 +120,7 @@ class CoverageReader:
                 "changed_lines_coverage_pct": cl_pct,
             }
 
+        self._last_status = AnalyzerStatus.OK.value
         return {"coverage_available": True, "files": result_files}
 
     def _find_coverage_file(self) -> str | None:

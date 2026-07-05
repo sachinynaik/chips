@@ -90,6 +90,57 @@ def test_returns_false_when_exception_loading_coverage():
     assert result["coverage_available"] is False
 
 
+def test_last_status_defaults_to_skipped_before_run():
+    with _tmpdir() as d:
+        assert _reader(d).last_status == "skipped"
+
+
+def test_last_status_skipped_when_no_py_files():
+    with _tmpdir() as d:
+        open(os.path.join(d, ".coverage"), "w").close()
+        reader = _reader(d)
+        reader.analyze(["README.md"])
+    assert reader.last_status == "skipped"
+
+
+def test_last_status_skipped_when_no_coverage_file():
+    with _tmpdir() as d:
+        reader = _reader(d)
+        reader.analyze([os.path.join(d, "src", "auth.py")])
+    assert reader.last_status == "skipped"
+
+
+def test_last_status_not_installed_when_coverage_import_missing():
+    with _tmpdir() as d:
+        open(os.path.join(d, ".coverage"), "w").close()
+        reader = _reader(d)
+        with patch.dict(sys.modules, {"coverage": None}):
+            reader.analyze([os.path.join(d, "auth.py")])
+    assert reader.last_status == "not_installed"
+
+
+def test_last_status_failed_when_loading_coverage_crashes():
+    with _tmpdir() as d:
+        open(os.path.join(d, ".coverage"), "w").close()
+        cov_mock = MagicMock()
+        cov_mock.load.side_effect = Exception("corrupt db")
+        reader = _reader(d)
+        with patch("coverage.Coverage", return_value=cov_mock):
+            reader.analyze([os.path.join(d, "auth.py")])
+    assert reader.last_status == "failed"
+
+
+def test_last_status_ok_when_coverage_data_is_read():
+    with _tmpdir() as d:
+        open(os.path.join(d, ".coverage"), "w").close()
+        abs_path = os.path.join(d, "auth.py")
+        cov_mock, _ = _make_coverage_mock({abs_path: [1, 2, 3]})
+        reader = _reader(d)
+        with patch("coverage.Coverage", return_value=cov_mock):
+            reader.analyze([abs_path])
+    assert reader.last_status == "ok"
+
+
 # ---------------------------------------------------------------------------
 # coverage_available=True and basic file-level coverage
 # ---------------------------------------------------------------------------
