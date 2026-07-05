@@ -70,7 +70,7 @@ def test_create_bus_returns_fastmcp_named_chips_cortex():
     assert app.name == "chips-cortex"
 
 
-def test_create_bus_registers_all_thirteen_modules():
+def test_create_bus_registers_all_fourteen_modules():
     from chips.mcp.bus import create_bus
     _, registry = create_bus(
         conn_factory=MagicMock(),
@@ -81,6 +81,6 @@ def test_create_bus_registers_all_thirteen_modules():
     expected = {
         "memory", "git", "brief", "briefs",
         "diffs", "runtime", "workflow", "health", "feedback",
-        "contracts", "tests_ctx", "policy", "constraints",
+        "contracts", "tests_ctx", "policy", "constraints", "hypotheses",
     }
     assert set(registry.module_names) == expected
