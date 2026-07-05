@@ -74,6 +74,7 @@ def create_bus(
     from chips.mcp.modules.feedback import FeedbackModule
     from chips.mcp.modules.git import GitModule
     from chips.mcp.modules.health import HealthModule
+    from chips.mcp.modules.hypotheses import HypothesesModule
     from chips.mcp.modules.memory import MemoryModule
     from chips.mcp.modules.policy import PolicyModule
     from chips.mcp.modules.runtime import RuntimeModule
@@ -107,6 +108,7 @@ def create_bus(
     registry.add(WorkflowModule())
     registry.add(ContractsModule(conn_factory=conn_factory))
     registry.add(ConstraintsModule(conn_factory=conn_factory))
+    registry.add(HypothesesModule(conn_factory=conn_factory))
     registry.add(TestsModule(conn_factory=conn_factory))
     registry.add(PolicyModule(policy_loader=policy_loader))
     registry.add(BriefsModule(conn_factory=conn_factory))

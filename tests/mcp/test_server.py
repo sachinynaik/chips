@@ -1,4 +1,5 @@
 """MCP server wiring tests — verifies the bus app and tool registrations."""
+from uuid import uuid4
 from unittest.mock import MagicMock, patch
 
 
@@ -26,8 +27,61 @@ def test_server_exposes_health_and_feedback_tools():
         "get_constraints",
         "add_constraint",
         "retire_constraint",
+        "submit_hypotheses",
+        "get_constraint_candidates",
+        "review_constraint_candidate",
     }
     assert expected.issubset(registered)
+
+
+def test_submit_hypotheses_server_delegates_to_tool():
+    payload = {"bundle_id": "b1", "ranked_hypotheses": [], "constraint_candidates": []}
+    with (
+        patch("chips.mcp.server._submit_hypotheses", return_value=payload) as fn,
+        patch("chips.mcp.server._get_conn", return_value=MagicMock()),
+    ):
+        from chips.mcp.server import submit_hypotheses
+
+        result = submit_hypotheses(
+            evidence_bundle={"bundle_id": "b1", "constraints": [], "evidence": []},
+            hypotheses=[],
+        )
+
+    assert result == payload
+    fn.assert_called_once()
+
+
+def test_get_constraint_candidates_server_delegates_to_tool():
+    payload = {"status": "ok", "candidates": []}
+    with (
+        patch("chips.mcp.server._get_constraint_candidates", return_value=payload) as fn,
+        patch("chips.mcp.server._get_conn", return_value=MagicMock()),
+    ):
+        from chips.mcp.server import get_constraint_candidates
+
+        result = get_constraint_candidates(scope="checkout", tenant_id="t1")
+
+    assert result == payload
+    fn.assert_called_once()
+
+
+def test_review_constraint_candidate_server_delegates_to_tool():
+    payload = {"status": "ok", "reviewed": True}
+    cid = str(uuid4())
+    with (
+        patch("chips.mcp.server._review_constraint_candidate", return_value=payload) as fn,
+        patch("chips.mcp.server._get_conn", return_value=MagicMock()),
+    ):
+        from chips.mcp.server import review_constraint_candidate
+
+        result = review_constraint_candidate(
+            candidate_id=cid,
+            resolution="dismissed",
+            tenant_id="t1",
+        )
+
+    assert result == payload
+    fn.assert_called_once()
 
 
 def test_search_memory_tool_embeds_query_before_searching():
