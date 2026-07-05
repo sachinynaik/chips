@@ -37,3 +37,29 @@ def test_extract_changed_lines_parses_diff():
     enr = SembleEnricher("/repo")
     mapping = enr._extract_changed_lines(diff)
     assert mapping.get("src/auth/token.py") == 10
+
+
+def test_last_status_defaults_to_skipped():
+    assert _enr().last_status == "skipped"
+
+
+def test_last_status_ok_after_related_results():
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="src/auth/session.py:45:validate_session")
+        enr = _enr()
+        enr.enrich(["src/auth/token.py"], SAMPLE_DIFF)
+    assert enr.last_status == "ok"
+
+
+def test_last_status_not_installed_on_missing_binary():
+    enr = _enr()
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        enr.enrich(["src/auth/token.py"])
+    assert enr.last_status == "not_installed"
+
+
+def test_last_status_failed_on_generic_error():
+    enr = _enr()
+    with patch("subprocess.run", side_effect=RuntimeError("boom")):
+        enr.enrich(["src/auth/token.py"])
+    assert enr.last_status == "failed"

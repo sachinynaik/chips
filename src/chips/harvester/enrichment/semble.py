@@ -2,11 +2,20 @@ from __future__ import annotations
 import re
 import subprocess
 
+from chips.harvester.enrichment.models import AnalyzerStatus
+
+
 class SembleEnricher:
     def __init__(self, repo_path: str) -> None:
         self._repo_path = repo_path
+        self._last_status: str = AnalyzerStatus.SKIPPED.value
+
+    @property
+    def last_status(self) -> str:
+        return self._last_status
 
     def enrich(self, files_changed: list[str], diff_content: str = "") -> list[dict]:
+        self._last_status = AnalyzerStatus.SKIPPED.value
         results = []
         file_lines = self._extract_changed_lines(diff_content)
         for file_path in files_changed[:3]:
@@ -24,8 +33,13 @@ class SembleEnricher:
                     for out_line in output.splitlines():
                         if out_line.strip():
                             results.append({"source_file": file_path, "related": out_line.strip()})
+            except FileNotFoundError:
+                self._last_status = AnalyzerStatus.NOT_INSTALLED.value
+                return []
             except Exception:
-                pass
+                self._last_status = AnalyzerStatus.FAILED.value
+                return []
+        self._last_status = AnalyzerStatus.OK.value
         return results
 
     def _extract_changed_lines(self, diff_content: str) -> dict[str, int]:
