@@ -137,10 +137,10 @@ closable now or gated on an event.
 |---|---|---|---|
 | 1 | CodeGraph spike verdict (A1) — gate-fitness of `colbymchenry/codegraph`; confirms/kills the code-vs-docs partition | this file | run 2-day spike → ADR-009 |
 | 2 | ~~Track 2 P0 — partial-population gate decision table ({DRC input} × {fresh/stale/missing/failed-write} → action)~~ **DECIDED 2026-07-05 (A7)** | build brief | paper artifact; **blocks all gate code** |
-| 3 | Co-change support threshold + generated-code filter | register OD-2 | short design note; blocks entropy quality |
-| 4 | Demo-vs-gate metric boundary — write the explicit list | register OD-5 | one-page list (mostly already stated) |
+| 3 | ~~Co-change support threshold + generated-code filter~~ **DECIDED 2026-07-06 (A11)** | register OD-2 | short design note; blocks entropy quality |
+| 4 | ~~Demo-vs-gate metric boundary — write the explicit list~~ **DECIDED 2026-07-06 (A12)** | register OD-5 | one-page list (mostly already stated) |
 | 5 | Zenith spike — run it or kill it (approved 2026-06-05, unexecuted) | ADR-002 | 2-day spike per its locked rubric |
-| 6 | Stack-role verification — Dolt/Timescale/Meilisearch/txtAI/Redpanda: CHIPS-specific vs SpaceMate-wide | register OD-8 | inventory pass against A0 |
+| 6 | ~~Stack-role verification — Dolt/Timescale/Meilisearch/txtAI/Redpanda: CHIPS-specific vs SpaceMate-wide~~ **DECIDED 2026-07-06 (A13)** | register OD-8 | inventory pass against A0 |
 
 **Gated on an event (do not force early):**
 
@@ -205,6 +205,76 @@ is pulled into v1. Recorded in `chips-blast-radius-measures.md` §5.
 **Status: LOCKED (owner decision, 2026-07-05).** Tiers T1–T4; ~60% hygiene-audit link-rate
 threshold; T4 excluded from calibration until the audit passes. Recorded in
 `chips-defect-corpus-harvest-spec.md`.
+
+---
+
+## A11. Co-change threshold + generated-code filter — signed off
+
+**Status: SIGNED OFF (owner decision, 2026-07-06).** Four rulings, recorded in full in
+`chips-cochange-threshold-design-note-draft.md`:
+
+1. **Support threshold = Fixed N, floor 2** — ratifies the landed entropy-side
+   `min_support=2` (`signals.py`); the same configurable floor extends to
+   `CochangeFetcher.fetch` (follow-up slice). Recency-boosting deferred (the
+   `last_seen_at` column exists — the draft's schema claim was wrong — but it is a
+   last-touch stamp, not history; true decay needs design first).
+2. **Generated-code filter lives at query time** — capture stores the TRUE computed
+   entropy alongside `generated_kind`; readers apply the exclusion; the pair fetcher
+   gains a `generated_kind` JOIN-exclusion. Implies a follow-up slice replacing the
+   capture-time hard-zero in `_compute_stored_cochange_entropy`.
+3. **Cold start reuses the A7 shadow-phase framing** — thin/missing co-change signal is
+   advisory-only until coverage crosses the declared threshold; one cold-start story
+   system-wide.
+4. **`classify_generated_kind` extends now** — lockfiles (uv.lock, package-lock.json, …)
+   and vendored segments (/vendor/, /vendored/, /third_party/) classify as `generated`;
+   small TDD slice.
+
+Follow-up slices spawned by this verdict: pair-fetcher floor+exclusion, query-time
+entropy storage, classifier extension. Calibration of the floor beyond 2 stays open
+(A5 open row — needs corpus data).
+
+---
+
+## A12. Demo-vs-gate metric boundary — signed off
+
+**Status: SIGNED OFF (owner decision, 2026-07-06).** The OD-5 explicit list is the 15-row
+table in `chips-demo-vs-gate-boundary-draft.md` (12 assembled rows ratified + 3 added at
+sign-off). Rulings on the draft's open rows:
+
+1. **Associative-tier law grounded** — source is `chips-track2-p1-ontology-contract.md`
+   ("associative never gates a destructive fire" as schema invariant) → table row 13.
+2. **`repo_metrics_v` ↔ DRC Policy Eval stays OPEN by design** until the Policy Eval arm's
+   design exists — declaring now would mint a contract ahead of design.
+3. **Co-change coupling splits per A11** — advisory in shadow phase, empirical-tier
+   gate-eligible past the coverage threshold → table row 14.
+4. **CodeGraph MCP tools during the ADR-009 window: allowed as ADVISORY on real work**
+   (owner chose broader than the measurement-only recommendation); gate-eligibility still
+   waits on the verdict → table row 15.
+
+---
+
+## A13. Stack-role inventory (OD-8) — signed off
+
+**Status: SIGNED OFF (owner decision, 2026-07-06).** Full rulings in
+`chips-stack-role-inventory-draft.md`; register rows updated in place:
+
+1. **Dolt** — target-adopt stands (versioned ground-truth for Materials, register §4.7
+   "role RESOLVED"); activation gated on "Materials projection work begins" (A5 #12's gate).
+2. **Meilisearch** — CHIPS keeps its Cortex-Retrieve lexical role; the running instance is
+   machine-shared substrate (today serving the unified chat/search architecture).
+3. **txtAI** — **REMOVED from the whole stack** (owner statement): superseded by the
+   unified chat/search architecture (shared retrieval core — Meili/BM25, Qdrant,
+   Arroy/ColBERT, Postgres, Oxigraph/AGE, Dolt — also serving video-analytics text
+   embeddings).
+4. **Redpanda** — **REPLACED by NATS JetStream** (owner statement). Event bus stays
+   target-only, gated on real eventing work. NATS has no Redpanda-style schema registry:
+   the registry half of register §4.8 is now an open row; `buf breaking` gating stands
+   independently.
+5. **Timescale** — unchanged: OLAP fallback behind DeltaX, gated on #12.
+
+Note the convergence: the unified chat/search architecture independently adopted Dolt and
+Oxigraph — CHIPS's target vocabulary and the SpaceMate-wide substrate are aligning rather
+than drifting.
 
 ---
 

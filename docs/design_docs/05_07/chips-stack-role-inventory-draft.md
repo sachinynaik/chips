@@ -1,6 +1,20 @@
 # CHIPS — Stack Role Inventory (Draft)
 
-**DRAFT — for owner sign-off (A5 #6). Drafted 2026-07-05. Decides nothing by itself.**
+**SIGNED OFF (owner decision, 2026-07-06 — recorded as amendment A13).** Rulings, after
+grounding the register rows the draft couldn't read (`chips-component-decision-register.md`
+§4.7/§4.8): **Dolt** = target-adopt (role stands: versioned ground-truth for Materials),
+gated on "Materials projection work begins" (same gate as A5 #12). **Meilisearch** = CHIPS
+keeps its claimed Cortex-Retrieve lexical role; the running instance is machine-shared
+substrate. **txtAI** = REMOVED from the whole stack (owner statement 2026-07-06) —
+superseded by the unified chat/search architecture (shared retrieval core also serving
+video-analytics text embeddings; diagrams in `~/Downloads/combined_unified_chat_search_
+architecture.svg` + search/chat pipeline SVGs). **Redpanda** = REPLACED by NATS JetStream
+(owner statement 2026-07-06); event-bus remains target-only, gated; the schema-registry
+half of register §4.8 becomes an open row (buf gating stands alone). **Timescale** =
+unchanged (OLAP fallback behind DeltaX, gated on #12). Register rows updated in place with
+dated notes.
+
+*(Original draft header: DRAFT — for owner sign-off (A5 #6). Drafted 2026-07-05.)*
 
 > Scope: register OD-8, closed per `chips-component-decision-amendments.md` A5 #6 as
 > "inventory pass against A0." This document only inventories claimed roles against the
@@ -35,13 +49,17 @@ A5 #6 and the assigned framing — proceeding to write.
 
 ## Open rows for the owner
 
-1. **Dolt** — where was this tool's CHIPS role originally claimed? Not found in the four docs read for this pass. Needs the register (`chips-component-decision-register.md`) or another source located and cited before disposition can move past "defer."
-2. **Redpanda** — same gap: locate and cite the specific doc + section that names it as target event-bus vocabulary (referenced only second-hand here via coordinator context).
-3. **Meilisearch / txtAI** — confirm with the owner whether CHIPS is expected to ever have its own search/retrieval role distinct from what SpaceMate's chat backend already runs, or whether these two are permanently out of CHIPS's scope (in which case "reject" above can be tightened to a formal closure rather than a per-pass default).
-4. **Timescale** — no action needed until the A5 gate (#12, "Materials projection work begins") fires; owner may want to pre-register the eval criteria now so the gated item isn't drafted from scratch later.
-5. Confirm whether OD-8's original register row (not read in this pass) contains claimed roles for any of these five tools that materially differ from what's stated above — this pass could not check that directly.
+All five resolved at sign-off 2026-07-06 (rulings in the header; the register WAS read at
+sign-off and did materially differ from this draft's read-set view — Dolt and Meilisearch
+both had claimed roles the draft couldn't see, confirming open row 5's suspicion):
 
-**Open rows total: 5.**
+1. **Dolt** — grounded: register §4.7 "adopt (target) — role RESOLVED." Ruling: stands, gated on Materials.
+2. **Redpanda** — grounded: register §4.7 (streaming) + §4.8 (schema registry). Ruling: replaced by NATS JetStream; registry slot open.
+3. **Meilisearch / txtAI** — ruled: Meilisearch keeps its CHIPS role on shared substrate; txtAI removed stack-wide.
+4. **Timescale** — unchanged; eval criteria still to be pre-registered when #12's gate approaches (the one live remainder of this list).
+5. **Register divergence** — confirmed and reconciled; register rows carry dated owner notes.
+
+**Open rows remaining: 1** (Timescale eval criteria pre-registration — optional, non-blocking).
 
 ---
 

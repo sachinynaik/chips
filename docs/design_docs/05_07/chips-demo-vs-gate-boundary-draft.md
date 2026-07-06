@@ -1,7 +1,16 @@
 # CHIPS — Demo-vs-Gate Metric Boundary (Draft)
 
-**DRAFT — for owner sign-off (A5 #4). Drafted 2026-07-05 from OD-5 + existing stated
-boundaries; decides nothing by itself.**
+**SIGNED OFF (owner decision, 2026-07-06 — recorded as amendment A12).** The 12-row table
+is ratified as the explicit OD-5 boundary list, extended with rows 13–15 below. Open-row
+rulings: (1) the associative-tier law IS grounded — `chips-track2-p1-ontology-contract.md`
+makes "associative never gates a destructive fire" a schema invariant → row 13; (2)
+`repo_metrics_v` as direct DRC Policy Eval input stays OPEN until the Policy Eval arm's
+design exists (declaring now would mint a contract ahead of design); (3) co-change coupling
+signals split per A11 → row 14; (4) CodeGraph MCP tools during the ADR-009 evaluation
+window are **allowed as advisory on real work** (owner chose broader than the
+measurement-only recommendation) → row 15.
+
+*(Original draft header: DRAFT — for owner sign-off (A5 #4). Drafted 2026-07-05.)*
 
 > Source: `docs/design_docs/05_07/chips-component-decision-amendments.md` A5 "Closable now"
 > #4 — "Demo-vs-gate metric boundary — write the explicit list," source register OD-5,
@@ -41,44 +50,28 @@ boundaries; decides nothing by itself.**
 | 10 | Defect-corpus labels, tiers T1–T3 | — | Yes — "highest-confidence subset," raw capture underlies query-time label use | `chips-execution-decision-sheet.md` "Defect definition" row; `implementation_tracking.md` L2 |
 | 11 | Anti-regression / constraint-candidate review queue outputs (pre-verifier) | Yes — manual-review/advisory today; "not yet fully operational as the controlling verifier-backed write-back loop" | Gate-eligible once the loop is verifier-backed end to end | `implementation_tracking.md` L1/L4 |
 | 12 | Admission-time chip safety metrics | Yes — deferred entirely, no build yet, so any interim signal is demo-only by default | Gate-eligible only "when a real chip library or registration path exists" | `chips-execution-decision-sheet.md` "Admission-time chip safety" row |
+| 13 | Associative-tier signals (`g:experience`) | Yes — readable for escalation framing only | **Never** PASS-eligible on a destructive fire (schema invariant); an edge becomes gate-eligible only by earning promotion to a higher tier | `chips-track2-p1-ontology-contract.md` (tier table; "associative never gates" invariant) — added at sign-off 2026-07-06 |
+| 14 | Co-change coupling signals (pairs + entropy) | Yes — advisory during the declared shadow phase | Gate-eligible as empirical-tier signal once coverage crosses the declared threshold (same split shape as row 8) | amendment A11 (2026-07-06) — added at sign-off |
+| 15 | CodeGraph MCP tools (`codegraph_*`) during the ADR-009 evaluation window | Yes — agents may invoke them on real work, output treated as advisory only | Gate-eligible (Blast Radius Read consumption) only after the ADR-009 verdict confirms gate fitness (row 7) | owner ruling at sign-off 2026-07-06 (broader than the measurement-only recommendation) |
 
 ## Open rows for owner
 
-These could not be grounded on either side from the four files this draft was scoped to
-read; they need an owner statement before they can be added to the table above.
+Resolved at sign-off 2026-07-06 except one: former open rows 1, 3, 4 became table rows
+13, 14, 15 respectively (rulings in the header). The single remaining open row:
 
-1. **Associative-tier signal classification (standing law #3 above).** The brief states
-   "associative-tier signals never gate" as a standing law, but none of the four files read
-   for this draft (decision sheet, amendments doc, implementation tracking, execution
-   ledger) states it. Likely lives in a P1/ontology-partition design doc outside this
-   draft's read scope — owner should confirm the source doc and whether it belongs in this
-   table.
-2. **`repo_metrics_v` as a direct DRC Policy Eval input** (as opposed to a
+1. **`repo_metrics_v` as a direct DRC Policy Eval input** (as opposed to a
    dashboard-visualization source only). L1 lists `repo_metrics_v` as built foundation and
    L7 lists "DRC Policy Eval arm" as not-built; no file read states whether the view itself
    is meant to feed the eventual Policy Eval arm once built, or whether Policy Eval sources
-   from elsewhere. **NEW-INFERENCE if included** — not stated either way.
-3. **Co-change coupling signals** (amendments doc A5 #3, OD-2: "Co-change support threshold
-   + generated-code filter — blocks entropy quality"). Stated as blocking *entropy signal
-   quality*, not explicitly classified as demo-only vs gate-eligible once the threshold is
-   set. Owner should state which side this lands on.
-4. **MCP-exposed CodeGraph tools (`codegraph_impact`/`callers`/`callees`/`status`)** used
-   directly by an agent during the evaluation window, distinct from row 7's structural-graph
-   *data* — i.e., is direct tool use during the spike itself permitted at all (even
-   advisory), or fully blocked until ADR-009 concludes? Amendments doc A1 says "no swap, no
-   retention, until the spike reports" but does not explicitly address in-spike tool
-   invocation as demo-only vs disallowed.
+   from elsewhere. **NEW-INFERENCE if included** — not stated either way. **Owner ruling
+   2026-07-06: stays open by design until the Policy Eval arm's design doc exists.**
 
 ## Counts
 
-- DEMO-ONLY rows: 8 (rows 1, 2, 3, 4, 5, 6, 7-partial/pre-verdict, 11-pre-verifier, 12) —
-  see table; several rows are split demo/gate depending on precondition (2, 3, 7, 8, 9, 11,
-  12 each state both sides).
-- GATE-ELIGIBLE rows: 8 (rows 2-post-calibration, 3-post-A5#8, 5-post-unlock, 7-post-ADR-009,
-  8-post-enforcement-day, 9-post-audit, 10, 11-post-verifier, 12-post-chip-library) —
-  precondition-gated, not currently active.
-- Open rows for owner: 4.
-- NEW-INFERENCE flagged explicitly: 1 (open row 2, `repo_metrics_v` as direct DRC input).
+- Table rows: 15 (12 as drafted + 3 added at sign-off); several rows are split demo/gate
+  depending on precondition (2, 3, 7, 8, 9, 11, 12, 14, 15 each state both sides).
+- Open rows for owner: 1 (repo_metrics_v ↔ Policy Eval; deliberately open).
+- NEW-INFERENCE flagged explicitly: 1 (the same remaining open row).
 
 Nothing else was read or written beyond the four permitted source files and this one
 output file.

@@ -1,6 +1,17 @@
 # Co-change Support Threshold + Generated-Code Filter — Design Note
 
-**DRAFT — for owner sign-off (A5 #3). Drafted 2026-07-05. Decides nothing by itself.**
+**SIGNED OFF (owner decision, 2026-07-06 — recorded as amendment A11).** Rulings: Fixed N
+floor = 2 on both surfaces (ratifies the landed `min_support=2`, extends to
+`CochangeFetcher.fetch`); generated-code filter applied at QUERY time (capture stores true
+entropy + tag; the capture-time hard-zero is a defect to fix); cold start reuses the A7
+shadow-phase framing; `classify_generated_kind` extends to lockfiles + vendored segments.
+Corrections found at sign-off: `cortex_cochange_pairs` DOES carry `last_seen_at` (§2
+option 3's schema claim was wrong, though the conclusion stands — it is last-touch, not
+history); §1's "no support threshold" was stale — WS A landed `min_support=2` on the
+entropy surface 2026-07-06. Open rows 1–3 below are now grounded; row 5 (calibration
+beyond N=2) stays open.
+
+*(Original draft header: DRAFT — for owner sign-off (A5 #3). Drafted 2026-07-05.)*
 
 Source: register OD-2 (`chips-component-decision-register.md` §6, item 2) — "Co-change support
 threshold + generated-code filter." Carried into `chips-component-decision-amendments.md` A5,

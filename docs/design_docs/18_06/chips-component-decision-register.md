@@ -317,14 +317,15 @@ existing) · **defer** (later/trigger-gated) · **reject** (overlap or wrong fit
 | **Dolt** | **adopt (target) — role RESOLVED** | **versioned ground-truth state** for the Materials layer: immutable, branchable, diffable, point-in-time reconstructable score-field snapshots (the baseline for delta-signatures). NOT subsumed by DeltaX (which is read-only append-only). |
 | **DeltaX** (xataio) | **evaluate / watch** | Postgres-native columnar OLAP (Apache-2.0); runs projection math + coefficient fitting over versioned state. Candidate for the analytical/OLAP slot; **Timescale = mature fallback** for the same slot. v0.1 (May 2026) — young; lock the *requirement*, keep the *tool* swappable. |
 | Timescale | fallback | mature fallback for the OLAP/time-series slot if DeltaX isn't production-ready. |
-| Meilisearch | **adopt** | ranked FTS; federated with grep + Helix(ripgrep) under Cortex Retrieve lexical. |
-| txtAI / MinIO / Redpanda+RisingWave | adopt (stack) | orchestration backbone / objects / streaming. *(verify current CHIPS-vs-SpaceMate-wide role per A0.)* |
+| Meilisearch | **adopt** — role CONFIRMED (owner, 2026-07-06, A13) | ranked FTS; federated with grep + Helix(ripgrep) under Cortex Retrieve lexical. CHIPS keeps its claimed role; the running instance is machine-shared substrate (today serving the unified chat/search architecture) that CHIPS points at when the Retrieve lane is built. |
+| ~~txtAI~~ | **REJECT / REMOVED (owner, 2026-07-06, A13)** | removed from the whole stack — superseded by the unified chat/search architecture (shared retrieval core: Meili/BM25 + Qdrant + Arroy/ColBERT + Postgres + Oxigraph/AGE + Dolt store plane; also serves video-analytics text embeddings). |
+| MinIO / NATS JetStream (was Redpanda+RisingWave) | adopt (stack, target-only, gated) | objects / streaming. **Redpanda replaced by NATS JetStream (owner, 2026-07-06, A13)**; event-bus work is target vocabulary gated on real eventing need — nothing runs for CHIPS today. |
 
 ### 4.8 Validation / contracts (cross-cutting; some SpaceMate-chat-side)
 | Tool | Decision | Reason |
 |---|---|---|
 | sqllineage | **adopt (concept)** | static SQL column lineage from migrations; Prisma path = migration-SQL + query-log + schema-map. |
-| Redpanda Schema Registry + buf | adopt | event-schema compatibility; `buf breaking` = synchronous gate predicate (catches in-flight version skew). |
+| ~~Redpanda Schema Registry~~ + buf | adopt (buf); registry slot OPEN | event-schema compatibility; `buf breaking` = synchronous gate predicate (catches in-flight version skew). **Redpanda replaced by NATS JetStream (owner, 2026-07-06, A13); NATS has no Redpanda-style schema registry — the registry half of this row is an open row until the eventing design lands. buf gating stands on its own.** |
 | Pact | adopt | consumer-driven contracts; reverse-radius (you breaking a consumer). |
 | Stryker / mutmut | adopt | mutation testing — "is it *meaningfully* tested"; nightly clock. |
 | Hypothesis / Schemathesis | adopt | property-based + schema fuzzing; manufacture executions over cold paths. |
