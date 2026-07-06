@@ -8,6 +8,13 @@ gate code before P0").
 advisory-only until signal coverage crosses a declared threshold; the strict table applies
 from enforcement day. The coverage threshold value is recorded here when declared —
 softening missing-fragility was explicitly rejected (it would weaken the asymmetry law).
+**Coverage threshold (owner verdict, 2026-07-06):** signal coverage = the fraction of
+shadow-mode gate fires, over a trailing 14-day window, whose required DRC inputs were ALL
+fresh per §2. Enforcement day arrives when this fraction crosses **80%** (provisional,
+tunable with shadow-phase evidence, changes recorded here). Framing note: the locked
+asymmetry law means premature enforcement cannot produce a wrong PASS — the threshold is
+an escalation-noise dial, not a safety dial. The same declared threshold governs
+co-change cold-start per amendment A11.
 **Substrate note:** written substrate-agnostic. Each input names its target home (`g:*`
 named graph, Oxigraph) and its current Postgres analog. The table's semantics do not change
 at migration; only the freshness probes do.
