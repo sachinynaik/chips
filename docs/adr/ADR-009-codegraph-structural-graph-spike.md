@@ -1,8 +1,21 @@
 # ADR-009 — CodeGraph as Real-Time Structural Graph (Spike)
 
-**Status:** APPROVED to run (owner verdict, 2026-07-05) with one adjustment: R4 relaxed to
-90% node recall / 85% edge precision (drafted 95%/90%). Integration undecided pending spike result.
-**Date:** 2026-07-05
+**Status:** SPIKE RUN 2026-07-06/07 — **VERDICT: REJECT for gate use; advisory use OK
+(owner verdict, 2026-07-07, recorded as amendment A14).** Graphify remains the operating
+tool; the proposed code/docs partition is NOT adopted. Results: R1 TRIPWIRE 96/100 · R2
+14/15 · R3 PASS (p95 4.23s, 0 unreported staleness) · R4 recall 1.0000 PASS / edge
+precision 0.800 FAIL / Dart smoke PASS · R5 1/3 · R6 byte-identical (single trial) · R7
+PASS (≤1 day). Root cause of the reject: a **silent partial-index flake** (~1.4%/build;
+worst case dropped 23% of nodes + the entire call-edge class, exit 0, clean status) that
+breaks the files-are-truth reconstruction guarantee the gate lineage requires — plus
+systematic ambiguous-name call-edge misresolution (path-dependent). Reconsider a
+nodes+contains partition only after the upstream flake is fixed (reproducible: seeded
+harness + artifacts in `docs/design_docs/05_07/adr-009-spike-result.md` and
+`C:\sachinynaik\adr-009-spike\`). Advisory in-window use stays sanctioned by the
+demo-vs-gate boundary row 15.
+**Prior status:** APPROVED to run (owner verdict, 2026-07-05) with one adjustment: R4 relaxed to
+90% node recall / 85% edge precision (drafted 95%/90%).
+**Date:** 2026-07-05 (approved) · 2026-07-07 (verdict)
 **Candidate (pinned):** `colbymchenry/codegraph` (MIT; tree-sitter → local SQLite + FTS5;
 20+ languages incl. Python and Dart; native file-watcher, debounced auto-sync; per-file
 staleness banners; connect-time hash reconciliation; MCP tools incl. `codegraph_impact`,

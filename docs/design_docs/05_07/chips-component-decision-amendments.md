@@ -135,7 +135,7 @@ closable now or gated on an event.
 
 | # | Decision | Source | Closes via |
 |---|---|---|---|
-| 1 | CodeGraph spike verdict (A1) — gate-fitness of `colbymchenry/codegraph`; confirms/kills the code-vs-docs partition | this file | run 2-day spike → ADR-009 |
+| 1 | ~~CodeGraph spike verdict (A1) — gate-fitness of `colbymchenry/codegraph`; confirms/kills the code-vs-docs partition~~ **DECIDED 2026-07-07 (A14: REJECT for gate)** | this file | run 2-day spike → ADR-009 |
 | 2 | ~~Track 2 P0 — partial-population gate decision table ({DRC input} × {fresh/stale/missing/failed-write} → action)~~ **DECIDED 2026-07-05 (A7)** | build brief | paper artifact; **blocks all gate code** |
 | 3 | ~~Co-change support threshold + generated-code filter~~ **DECIDED 2026-07-06 (A11)** | register OD-2 | short design note; blocks entropy quality |
 | 4 | ~~Demo-vs-gate metric boundary — write the explicit list~~ **DECIDED 2026-07-06 (A12)** | register OD-5 | one-page list (mostly already stated) |
@@ -275,6 +275,29 @@ sign-off). Rulings on the draft's open rows:
 Note the convergence: the unified chat/search architecture independently adopted Dolt and
 Oxigraph — CHIPS's target vocabulary and the SpaceMate-wide substrate are aligning rather
 than drifting.
+
+---
+
+## A14. CodeGraph spike verdict — REJECT for gate use; advisory OK
+
+**Status: RECORDED (owner verdict, 2026-07-07).** The ADR-009 spike ran 2026-07-06/07
+(one day of the two-day box). Full table and evidence:
+`ADR-009-codegraph-structural-graph-spike.md` (header) and `adr-009-spike-result.md`.
+
+- **Verdict: REJECT for gate use.** The A1 code/docs partition is NOT adopted; Graphify
+  remains the operating structural-graph tool for the gate lineage.
+- **Deciding defect:** silent partial-index flake (~1.4%/build; observed dropping 1 file,
+  5 files, and once ~23% of nodes + ALL call edges — always exit 0, zero error records).
+  Violates files-are-truth reconstruction guarantees; contaminates R1/R2/R6.
+- **Secondary:** ambiguous-name call-edge misresolution (R4 precision 0.800 < 0.85;
+  path-dependent resolution flips) — would cap call edges at advisory even post-fix.
+- **What held:** node recall 1.0000, R3 staleness reporting honest (p95 4.23s, zero
+  unreported), Dart full support, R7 integration ≤1 day.
+- **Advisory use stays sanctioned** (demo-vs-gate row 15). **Reconsideration path:** file
+  the flake upstream (seeded repro exists); a nodes+contains partition becomes defensible
+  only after it is fixed.
+- Spike branch `spike/adr-009-r7-codegraph-enricher` (local-only, never merged) holds the
+  R7 prototype; scratch artifacts under `C:\sachinynaik\adr-009-spike\`.
 
 ---
 
