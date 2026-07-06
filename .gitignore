@@ -27,3 +27,4 @@ graphify-out/
 .flashrank_cache/
 .hypothesis/
 tmp_pytest/
+.pytest_tmp/
