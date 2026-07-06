@@ -42,6 +42,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Persistent flashrank model cache
+        # The reranker downloads a ~21.6MB model into ./.flashrank_cache on first
+        # use (reranker.py _DEFAULT_CACHE_DIR is CWD-relative). Both CI passes
+        # start from a copy WITHOUT it (runner: fresh checkout; act: the repo
+        # copy excludes gitignored files), so every run re-downloads — and the
+        # download flakes whenever WSL egress to the HF CDN degrades
+        # (2026-07-06, run 28772075937 ×2 + the local act gate). Symlink it to
+        # a persistent location instead: under act the toolcache volume
+        # (act-toolcache) survives across runs; on the runner, the runner
+        # user's home does.
+        run: |
+          if [ ! -e .flashrank_cache ]; then
+            if [ -n "$ACT" ]; then
+              target="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}/flashrank"
+            else
+              target="$HOME/.cache/flashrank"
+            fi
+            mkdir -p "$target"
+            ln -s "$target" .flashrank_cache
+          fi
+
+      - name: Keep venv out of the checkout path (runner only)
+        # A containerized step once left a root-owned .venv inside _work/, and the
+        # next checkout's cleanup died on EACCES (2026-07-06, run 28754216463
+        # attempt 1). Relocate the runner's venv to a persistent path outside the
+        # checkout. Under act the container is ephemeral and the repo-mounted
+        # .venv is the warm cache — keep the default there.
+        if: ${{ !env.ACT }}
+        run: echo "UV_PROJECT_ENVIRONMENT=/tmp/chips-venv" >> "$GITHUB_ENV"
+
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
