@@ -32,12 +32,18 @@ class HarvesterDaemon:
         self._extractor = extractor or CommitMemoryExtractor()
         self._harvester_store = harvester_store or PostgresHarvesterStore(conn)
 
-    def run_once(self) -> int:
-        """Process new commits since last run. Returns count of memories written."""
+    def run_once(self, limit: int = 100) -> int:
+        """Process new commits since last run. Returns count of memories written.
+
+        `limit` bounds `git log --max-count`. The default matches the poll
+        loop's per-cycle expectations; pass a much larger value for a
+        one-time backfill call so `since_sha=None` doesn't silently cap at
+        the newest 100 commits and skip everything older.
+        """
         since_sha = self._last_ingested_sha()
 
         reader = GitReader(self._repo_path)
-        commits = reader.commits_since(since_sha=since_sha)
+        commits = reader.commits_since(since_sha=since_sha, limit=limit)
 
         if not commits:
             return 0

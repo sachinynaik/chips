@@ -124,3 +124,29 @@ def test_daemon_default_extractor_extracts_commit_message():
                 mock_reader.return_value.commits_since.return_value = commits
                 daemon.run_once()
     daemon._embedder.embed.assert_called_once_with("fix auth crash")
+
+
+# ── Backfill limit ────────────────────────────────────────────────────────────
+# run_once() previously hardcoded GitReader.commits_since()'s default limit=100,
+# so a repo with >100 commits could never be fully backfilled: the first cycle
+# only ever sees the newest 100 commits, and _last_ingested_sha() then jumps
+# straight to HEAD, permanently skipping everything older.
+
+def test_daemon_run_once_defaults_limit_to_100():
+    daemon = _daemon()
+    with patch("chips.harvester.daemon.GitReader") as mock_reader:
+        with patch("chips.harvester.daemon.GitIngestion"):
+            with patch("chips.harvester.daemon.MemoryRepository"):
+                mock_reader.return_value.commits_since.return_value = []
+                daemon.run_once()
+    mock_reader.return_value.commits_since.assert_called_once_with(since_sha=None, limit=100)
+
+
+def test_daemon_run_once_passes_explicit_limit_through_for_backfill():
+    daemon = _daemon()
+    with patch("chips.harvester.daemon.GitReader") as mock_reader:
+        with patch("chips.harvester.daemon.GitIngestion"):
+            with patch("chips.harvester.daemon.MemoryRepository"):
+                mock_reader.return_value.commits_since.return_value = []
+                daemon.run_once(limit=100_000)
+    mock_reader.return_value.commits_since.assert_called_once_with(since_sha=None, limit=100_000)
