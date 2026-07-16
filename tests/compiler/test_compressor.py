@@ -16,6 +16,44 @@ def _mock_ollama_response(text: str) -> MagicMock:
     return resp
 
 
+def test_compressor_default_timeout_tolerates_cold_model_load():
+    import httpx
+
+    captured: dict = {}
+    real_init = httpx.Client.__init__
+
+    def spy_init(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        real_init(self, *args, **kwargs)
+
+    with patch.object(httpx.Client, "__init__", spy_init), patch(
+        "httpx.Client.post", return_value=_mock_ollama_response("summary")
+    ):
+        _make_compressor().compress(hard_constraints=[], soft_items=["ctx"], task="t")
+    assert captured["timeout"] is not None
+    assert float(captured["timeout"]) >= 60
+
+
+def test_compressor_uses_configured_timeout():
+    import httpx
+
+    captured: dict = {}
+    real_init = httpx.Client.__init__
+
+    def spy_init(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        real_init(self, *args, **kwargs)
+
+    compressor = OllamaCompressor(
+        base_url="http://localhost:11434", model="m", timeout=90.0
+    )
+    with patch.object(httpx.Client, "__init__", spy_init), patch(
+        "httpx.Client.post", return_value=_mock_ollama_response("summary")
+    ):
+        compressor.compress(hard_constraints=[], soft_items=["ctx"], task="t")
+    assert float(captured["timeout"]) == 90.0
+
+
 def test_hard_constraints_always_present_in_output():
     compressor = _make_compressor()
     with patch("httpx.Client.post", return_value=_mock_ollama_response("summary")):

@@ -52,3 +52,42 @@ def test_embed_batch_returns_multiple_vectors():
     assert len(results) == 2
     assert results[0] == pytest.approx([0.1, 0.2])
     assert results[1] == pytest.approx([0.3, 0.4])
+
+
+# ── timeout resilience: a cold Ollama model load (~1GB) or contention must not
+#    trip httpx's 5s default and throw an uncaught ReadTimeout that breaks both
+#    the harvester and brief compile. ─────────────────────────────────────────
+
+
+def _capture_client_timeout():
+    """Return (patcher_cm, captured) that records the timeout httpx.Client got."""
+    captured: dict = {}
+    real_init = httpx.Client.__init__
+
+    def spy_init(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        real_init(self, *args, **kwargs)
+
+    return patch.object(httpx.Client, "__init__", spy_init), captured
+
+
+def test_embed_default_timeout_tolerates_cold_model_load():
+    spy, captured = _capture_client_timeout()
+    with spy, patch("httpx.Client.post", return_value=_mock_response([[0.1, 0.2]])):
+        OllamaEmbedder(base_url="http://localhost:11434", model="m").embed("x")
+    assert captured["timeout"] is not None, "embedder must set an explicit timeout, not httpx's 5s default"
+    assert float(captured["timeout"]) >= 60
+
+
+def test_embed_uses_configured_timeout():
+    spy, captured = _capture_client_timeout()
+    with spy, patch("httpx.Client.post", return_value=_mock_response([[0.1, 0.2]])):
+        OllamaEmbedder(base_url="http://localhost:11434", model="m", timeout=90.0).embed("x")
+    assert float(captured["timeout"]) == 90.0
+
+
+def test_embed_batch_uses_configured_timeout():
+    spy, captured = _capture_client_timeout()
+    with spy, patch("httpx.Client.post", return_value=_mock_response([[0.1], [0.2]])):
+        OllamaEmbedder(base_url="http://localhost:11434", model="m", timeout=75.0).embed_batch(["a", "b"])
+    assert float(captured["timeout"]) == 75.0
