@@ -30,9 +30,13 @@ class FileSignal:
     generated_kind: str | None = None
 
 
-_LOG_FORMAT = "%H|%an|%aI|%s"
+# The format MUST emit the same separators _parse_log splits on: a `===` line
+# before each commit header and a `---` line after it (then --name-only appends
+# the file list). Without them `git log` output has no separators, the whole log
+# parses as a single block, and only the first commit (no files) is returned.
 _COMMIT_SEP = "==="
 _FILE_SEP = "---"
+_LOG_FORMAT = f"{_COMMIT_SEP}%n%H|%an|%aI|%s%n{_FILE_SEP}"
 
 
 class GitReader:
