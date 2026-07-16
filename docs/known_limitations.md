@@ -71,15 +71,24 @@ on `(brief_id, actor_id)` if per-actor idempotency is the right model.
 
 ---
 
-## L6 — Source probes are synchronous and block every brief build
+## L6 — Source probes are synchronous and block every brief build — ✅ RESOLVED
+
+> **Resolved** via a short-TTL probe cache on `BriefBuilder`. `_probe_cached` reuses the last
+> `probe_runtime()` / `probe_workflow()` result for `_PROBE_CACHE_TTL_SECONDS` (30s) instead of
+> re-probing on every `build()`, so repeated builds within the window no longer pay the probe
+> timeout. A TTL cache was chosen over `asyncio.gather` deliberately: the module has no other
+> async code, so wrapping two blocking calls in a thread pool for one call site adds more
+> machinery than the problem warrants. Covered by `test_build_probes_runtime_and_workflow_on_first_call`,
+> `test_build_does_not_reprobe_within_ttl_window`, and `test_build_reprobes_after_ttl_expires`
+> in `tests/compiler/test_builder.py`. Original report below.
 
 **Location:** `src/chips/compiler/builder.py` — `probe_runtime()` and `probe_workflow()`  
-**Behavior:** Every `build()` call blocks on two sequential network probes. `probe_runtime`
-has a 1s HTTP timeout; `probe_workflow` has a 2s connect timeout.  
+**Behavior (original):** Every `build()` call blocked on two sequential network probes.
+`probe_runtime` has a 1s HTTP timeout; `probe_workflow` has a 2s connect timeout.  
 **Worst case:** ~3s of additional latency per build when both sources are slow but reachable.  
 **When it becomes a defect:** Any SLA on brief generation latency below ~4s.  
-**Follow-up:** Cache probe results with a short TTL (e.g. 30s) or run probes concurrently
-with retrieval using `asyncio.gather`. v2 enhancement.
+**Follow-up done:** Cached probe results with a short TTL (30s). Concurrency via
+`asyncio.gather` was considered and rejected as heavier than needed for this one sync call site.
 
 ---
 
@@ -90,18 +99,27 @@ with retrieval using `asyncio.gather`. v2 enhancement.
 
 ---
 
-## L7 — Finding evidence IDs are still positional (`finding:{index}`)
+## L7 — Finding evidence IDs are still positional (`finding:{index}`) — ✅ RESOLVED
+
+> **Resolved** by commit `2e1231e` ("feat(builder): stable find:<content-hash> IDs for soft
+> findings (Slice 0, §A)", 2026-05-31). `evidence.finding_evidence_id(finding)` now produces
+> `find:<content-hash>` from the exact per-kind normalized field set locked in contract §A;
+> `_extract_brief_signals` threads `(find_id, text)` pairs throughout and the old
+> `SoftContextItem(item_id=f"finding:{index}")` call site no longer exists. Cross-build
+> stability, order-independence, and no-collision-across-kinds are covered by
+> `tests/unit/test_finding_evidence_ids_wiring.py` (53 tests across the related suite green).
+> Original report below.
 
 **Location:** `src/chips/compiler/builder.py` — `SoftContextItem(item_id=f"finding:{index}")`  
-**Behavior:** Findings are assigned position-based IDs, not the stable `find:<content-hash>`
-scheme mandated by the Phase 1 contract §A. The same finding gets a different ID across two
-builds whenever upstream ordering changes.  
+**Behavior (original):** Findings were assigned position-based IDs, not the stable
+`find:<content-hash>` scheme mandated by the Phase 1 contract §A. The same finding got a
+different ID across two builds whenever upstream ordering changed.  
 **When it becomes a defect:** Any cross-build ID matching — write-back reinforcement, hypothesis
 `cited_evidence` validation, or de-duplication — keyed on a finding ID. §A calls this fix the
 mandatory prerequisite "before anything else in this phase."  
-**Follow-up:** Slice 0 (D2) — thread the structured finding dict through `_extract_brief_signals`
-and assign `evidence.finding_evidence_id(...)` over a per-kind normalized field set (locked in
-contract §A). Removes this limitation.
+**Follow-up done:** Slice 0 (D2) — threaded the structured finding dict through
+`_extract_brief_signals` and assigned `evidence.finding_evidence_id(...)` over a per-kind
+normalized field set (locked in contract §A). Removes this limitation.
 
 ---
 
@@ -192,3 +210,23 @@ action.
 **Follow-up:** Tie queue review semantics to the eventual verifier/human-outcome
 path, while preserving the invariant that no active constraint is created
 without manual confirmation through `add_constraint`.
+
+---
+
+## L13 — Harvester incremental cursor is global, not per-repo — multi-repo needs DB isolation
+
+**Location:** `src/chips/harvester/storage.py` — `PostgresHarvesterStore.latest_ingested_sha()`  
+**Behavior:** The since-pointer is `SELECT sha FROM cortex_git_commits ORDER BY committed_at
+DESC LIMIT 1` — no repo or `tenant_id` filter. `cortex_git_commits` has a `tenant_id` column
+but the harvest path (`HarvesterDaemon.run_once` → `GitIngestion` → `MemoryRepository.insert`)
+never sets it. So two repos harvested into the same database share one incremental cursor:
+repo B's `run_once` reads repo A's newest SHA, passes it to `GitReader.commits_since` (where it
+is not a valid ref in B), and the incremental math is corrupted.  
+**When it becomes a defect:** The moment more than one repo is harvested into a single database.
+**Workaround in use (2026-07-16):** one dedicated database per repo in `chips-prod-postgres`
+(`chips_backend`, `chips_chat`, `chips_staec`, `chips_bproxy`), driven by
+`scripts/ops/harvest-in-wsl-docker.sh`. Each database has exactly one repo, so the global cursor
+is correct within it.  
+**Follow-up:** Thread `tenant_id` (one per repo) through the harvest write path and scope
+`latest_ingested_sha()` (and the retrieval-side reads) by it, so a single database can hold many
+repos. Then collapse the per-repo databases into one multi-tenant store.
