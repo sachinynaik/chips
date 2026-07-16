@@ -29,6 +29,7 @@ def _conn() -> MagicMock:
 def _embedder() -> MagicMock:
     m = MagicMock(spec=OllamaEmbedder)
     m.embed.return_value = [0.1] * 768
+    m.embed_batch.side_effect = lambda texts: [[0.1] * 768 for _ in texts]
     return m
 
 
@@ -87,7 +88,10 @@ def test_daemon_embeds_content_from_provided_extractor():
     daemon = _daemon(extractor=extractor)
     _run_with_commits(daemon, [_commit()])
 
-    daemon._embedder.embed.assert_called_once_with("enriched lesson from pyrefly + semgrep")
+    daemon._embedder.embed_batch.assert_called_once_with(
+        ["enriched lesson from pyrefly + semgrep"]
+    )
+    daemon._embedder.embed.assert_not_called()
 
 
 def test_daemon_skips_none_records_from_provided_extractor():
@@ -113,6 +117,66 @@ def test_daemon_returns_correct_count_with_mixed_extractions():
     assert count == 2
 
 
+# ── Batched embedding (perf: avoid one HTTP round-trip per commit) ────────────
+
+def test_daemon_embeds_all_records_in_one_batch_call_not_per_commit():
+    extractor = MagicMock(spec=CommitMemoryExtractor)
+    records = []
+    for i in range(3):
+        record = MagicMock()
+        record.content = f"lesson {i}"
+        record.embedding = None
+        records.append(record)
+    extractor.extract.side_effect = records
+
+    daemon = _daemon(extractor=extractor)
+    commits = [_commit(sha=f"s{i}") for i in range(3)]
+    _run_with_commits(daemon, commits)
+
+    daemon._embedder.embed_batch.assert_called_once_with(
+        ["lesson 0", "lesson 1", "lesson 2"]
+    )
+    daemon._embedder.embed.assert_not_called()
+
+
+def test_daemon_assigns_correct_embedding_per_record_from_batch():
+    extractor = MagicMock(spec=CommitMemoryExtractor)
+    records = []
+    for i in range(3):
+        record = MagicMock()
+        record.content = f"lesson {i}"
+        record.embedding = None
+        records.append(record)
+    extractor.extract.side_effect = records
+
+    embedder = MagicMock(spec=OllamaEmbedder)
+    vectors = [[float(i)] * 4 for i in range(3)]
+    embedder.embed_batch.return_value = vectors
+
+    daemon = HarvesterDaemon(
+        conn=_conn(), embedder=embedder, repo_path=".", extractor=extractor
+    )
+    commits = [_commit(sha=f"s{i}") for i in range(3)]
+    _run_with_commits(daemon, commits)
+
+    for record, expected in zip(records, vectors):
+        assert record.embedding == expected
+
+
+def test_daemon_skips_none_records_before_batching_and_still_embeds_rest():
+    extractor = MagicMock(spec=CommitMemoryExtractor)
+    kept = MagicMock()
+    kept.content = "kept lesson"
+    kept.embedding = None
+    extractor.extract.side_effect = [None, kept]
+
+    daemon = _daemon(extractor=extractor)
+    count = _run_with_commits(daemon, [_commit(sha="s0"), _commit(sha="s1")])
+
+    assert count == 1
+    daemon._embedder.embed_batch.assert_called_once_with(["kept lesson"])
+
+
 # ── Backward compatibility ────────────────────────────────────────────────────
 
 def test_daemon_default_extractor_extracts_commit_message():
@@ -123,7 +187,8 @@ def test_daemon_default_extractor_extracts_commit_message():
             with patch("chips.harvester.daemon.MemoryRepository"):
                 mock_reader.return_value.commits_since.return_value = commits
                 daemon.run_once()
-    daemon._embedder.embed.assert_called_once_with("fix auth crash")
+    daemon._embedder.embed_batch.assert_called_once_with(["fix auth crash"])
+    daemon._embedder.embed.assert_not_called()
 
 
 # ── Backfill limit ────────────────────────────────────────────────────────────

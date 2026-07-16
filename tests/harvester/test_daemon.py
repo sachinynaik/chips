@@ -20,7 +20,9 @@ def _fake_commit(sha: str = "abc123", message: str = "fix crash") -> CommitRecor
 
 def _make_embedder(vector: list[float] | None = None) -> MagicMock:
     m = MagicMock()
-    m.embed.return_value = vector or [0.1] * 768
+    v = vector or [0.1] * 768
+    m.embed.return_value = v
+    m.embed_batch.side_effect = lambda texts: [v for _ in texts]
     return m
 
 
@@ -75,7 +77,8 @@ def test_run_once_embeds_memory_content(conn):
         mock_reader_cls.return_value.commits_since.return_value = commits
         daemon = HarvesterDaemon(conn, embedder, repo_path=".")
         daemon.run_once()
-    embedder.embed.assert_called_once_with("fix crash")
+    embedder.embed_batch.assert_called_once_with(["fix crash"])
+    embedder.embed.assert_not_called()
 
 
 def test_run_once_passes_since_sha_to_reader(conn):
