@@ -46,11 +46,22 @@ class GitIngestion:
         # Apply file-signal deltas commit-by-commit so replay from cortex_git_commits
         # reconstructs the exact same aggregates and snapshots. Batch-boundary
         # semantics are not stored in truth; per-commit replay is.
+        #
+        # _upsert_cochange_pairs(commits) has already merged every pair for this batch,
+        # so the cochange table is static for the whole loop below: a file's entropy is
+        # identical across all its commits. Memoize the read per file_path to kill the
+        # N+1 (one partner_frequencies query per (commit, file) → one per distinct file).
+        # On spacemate_chat_system this collapsed ~48k reads to a few thousand. The cache
+        # is per-call, so per-commit replay (rebuild_derived_from_truth) is unaffected.
+        entropy_cache: dict[str, float] = {}
         for commit in commits:
             signals = reader._compute_file_signals([commit])
             for signal in signals:
                 generated_kind = signal.generated_kind or classify_generated_kind(signal.file_path)
-                cochange_entropy = self._compute_stored_cochange_entropy(signal.file_path, generated_kind)
+                cochange_entropy = entropy_cache.get(signal.file_path)
+                if cochange_entropy is None:
+                    cochange_entropy = self._compute_stored_cochange_entropy(signal.file_path, generated_kind)
+                    entropy_cache[signal.file_path] = cochange_entropy
                 self._store.upsert_file_signal(
                     file_path=signal.file_path,
                     churn_score=signal.churn_score,

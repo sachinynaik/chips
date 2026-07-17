@@ -51,6 +51,7 @@ class _FakeStore:
     upserted_signals: list[dict] = field(default_factory=list)
     snapshots: list[dict] = field(default_factory=list)
     partner_freqs: dict[str, dict[str, float]] = field(default_factory=dict)
+    partner_freq_calls: list[str] = field(default_factory=list)
 
     def append_git_commits(self, commits: list[CommitRecord]) -> None:
         self.appended_commits.append(commits)
@@ -65,6 +66,7 @@ class _FakeStore:
         self.merged_pairs.append(pairs)
 
     def partner_frequencies(self, file_path: str) -> dict[str, float]:
+        self.partner_freq_calls.append(file_path)
         return self.partner_freqs.get(file_path, {})
 
     def upsert_file_signal(
@@ -138,6 +140,50 @@ def test_git_ingestion_uses_store_boundary_for_truth_and_derived_writes():
     assert store.snapshots[0]["generated_kind"] == "scaffolded"
     assert store.snapshots[0]["fragility_complete"] is False
     assert store.snapshots[0]["fragility_inputs_missing"] == ["defect_history_count"]
+
+
+def test_upsert_file_signals_memoizes_partner_frequencies_per_file_within_batch():
+    # N+1 guard. Within a single ingest_commits batch, _upsert_cochange_pairs merges
+    # ALL pairs BEFORE _upsert_file_signals runs, so the cochange table is static and
+    # a file's entropy is identical across every commit it appears in. Reading
+    # partner_frequencies once per (commit, file) is therefore pure redundancy — the
+    # dominant cost on large repos (spacemate_chat_system: ~48k reads, ~4h). The read
+    # must happen at most once per distinct file per batch.
+    store = _FakeStore()
+    ingestion = GitIngestion(store)
+    commits = [
+        _commit("c1", ["src/hot.py", "src/a.py"]),
+        _commit("c2", ["src/hot.py", "src/b.py"]),
+        _commit("c3", ["src/hot.py", "src/c.py"]),
+    ]
+
+    ingestion.ingest_commits(commits)
+
+    from collections import Counter
+
+    counts = Counter(store.partner_freq_calls)
+    # hot.py changed in all three commits but must be read exactly once
+    assert counts["src/hot.py"] == 1, counts
+    # every distinct file read at most once
+    assert all(v == 1 for v in counts.values()), counts
+
+
+def test_upsert_file_signals_still_snapshots_every_commit_for_a_repeated_file():
+    # Memoizing the read must NOT drop per-commit snapshots: a file in 3 commits
+    # still gets 3 snapshots (one per basis_sha), all carrying the same entropy.
+    store = _FakeStore()
+    ingestion = GitIngestion(store)
+    commits = [
+        _commit("c1", ["src/hot.py"]),
+        _commit("c2", ["src/hot.py"]),
+        _commit("c3", ["src/hot.py"]),
+    ]
+
+    ingestion.ingest_commits(commits)
+
+    hot_snaps = [s for s in store.snapshots if s["file_path"] == "src/hot.py"]
+    assert sorted(s["basis_sha"] for s in hot_snaps) == ["c1", "c2", "c3"]
+    assert len({s["cochange_entropy"] for s in hot_snaps}) == 1
 
 
 def test_postgres_store_latest_ingested_sha_reads_truth_table():
