@@ -6,7 +6,11 @@ from pathlib import Path
 import git
 import pytest
 
-from chips.harvester.git_reader import GitReader, CommitRecord
+from chips.harvester.git_reader import (
+    GitReader,
+    CommitRecord,
+    _MAX_FILES_FOR_COCHANGE,
+)
 
 
 @pytest.fixture
@@ -129,6 +133,44 @@ def test_cochange_frequency_increments_for_repeated_pairs():
     }
     key = tuple(sorted(["src/valet/checkout.py", "src/valet/tests/test_checkout.py"]))
     assert freq[key] == 2
+
+
+def test_compute_cochange_pairs_skips_bulk_commits():
+    # A bulk commit (mass import / codegen dump) touching more files than the
+    # cap must contribute ZERO co-change pairs: those files did not meaningfully
+    # co-evolve, and pairing them is O(N^2) — one 8.9k-file commit implies ~40M
+    # pairs. A normal focused commit still pairs as usual.
+    reader = GitReader.__new__(GitReader)
+    bulk_files = [f"gen/bulk_{i}.py" for i in range(_MAX_FILES_FOR_COCHANGE + 5)]
+    commits = [
+        CommitRecord(sha="bulk", author="A", committed_at="2026-05-01T00:00:00",
+                     message="mass import", files_changed=bulk_files),
+        CommitRecord(sha="focused", author="A", committed_at="2026-05-02T00:00:00",
+                     message="fix", files_changed=["src/a.py", "src/b.py"]),
+    ]
+    pairs = reader._compute_cochange_pairs(commits)
+    pair_set = {tuple(sorted([a, b])) for a, b, _ in pairs}
+    assert pair_set == {("src/a.py", "src/b.py")}
+
+
+def test_compute_file_signals_counts_bulk_churn_but_skips_bulk_cochange():
+    # Churn must still be counted for every file in a bulk commit (the file DID
+    # change), but the O(N^2) co-change pairing is skipped, so a file that only
+    # ever appears in bulk commits has zero co-change entropy. Two identical bulk
+    # commits would otherwise give every pair frequency 2 (clearing min-support)
+    # and near-maximal entropy — this proves the cap suppresses that noise.
+    reader = GitReader.__new__(GitReader)
+    bulk_files = [f"gen/bulk_{i}.py" for i in range(_MAX_FILES_FOR_COCHANGE + 5)]
+    commits = [
+        CommitRecord(sha="bulk1", author="A", committed_at="2026-05-01T00:00:00",
+                     message="dump", files_changed=bulk_files),
+        CommitRecord(sha="bulk2", author="A", committed_at="2026-05-02T00:00:00",
+                     message="dump", files_changed=bulk_files),
+    ]
+    signals = reader._compute_file_signals(commits)
+    by_file = {s.file_path: s for s in signals}
+    assert by_file["gen/bulk_0.py"].churn_count == 2
+    assert by_file["gen/bulk_0.py"].cochange_entropy == 0.0
 
 
 def test_compute_file_churn():

@@ -38,6 +38,14 @@ _COMMIT_SEP = "==="
 _FILE_SEP = "---"
 _LOG_FORMAT = f"{_COMMIT_SEP}%n%H|%an|%aI|%s%n{_FILE_SEP}"
 
+# A commit touching more files than this is a bulk/generated operation (mass
+# import, codegen dump, license-header sweep, vendored drop). Its files did not
+# meaningfully "co-evolve", so pairing them adds only noise to co-change entropy
+# — and it is O(N^2): one real 8.9k-file commit implies ~40M pairs, hours of
+# inserts in a single transaction. Above this bound we still count churn but skip
+# the co-change pairing entirely.
+_MAX_FILES_FOR_COCHANGE = 100
+
 
 class GitReader:
     def __init__(self, repo_path: str) -> None:
@@ -89,6 +97,8 @@ class GitReader:
         freq: dict[tuple[str, str], int] = {}
         for commit in commits:
             files = sorted(commit.files_changed)
+            if len(files) > _MAX_FILES_FOR_COCHANGE:
+                continue
             for i, fa in enumerate(files):
                 for fb in files[i + 1:]:
                     key = (fa, fb)
@@ -102,6 +112,8 @@ class GitReader:
             files = sorted(set(commit.files_changed))
             for f in files:
                 churn[f] = churn.get(f, 0) + 1
+            if len(files) > _MAX_FILES_FOR_COCHANGE:
+                continue
             for i, fa in enumerate(files):
                 for fb in files[i + 1:]:
                     partner_freq.setdefault(fa, {})
