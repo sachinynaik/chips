@@ -92,6 +92,25 @@ class DecisionLogRepository:
         ).fetchall()
         return [self._row_to_entry(r) for r in rows]
 
+    def set_verifier_outcome(
+        self, decision_id: UUID, outcome: dict, tenant_id: str | None = None
+    ) -> bool:
+        """Set verifier_outcome (JSONB) for one decision row, tenant-scoped.
+
+        Returns True if a row was updated (i.e. the id existed and matched the
+        tenant scope), False otherwise.
+        """
+        scoped = build_tenant_scope(
+            ["id = %s"], [str(decision_id)], tenant_id
+        )
+        result = self._conn.execute(  # type: ignore[arg-type]
+            f"UPDATE cortex_decision_log SET verifier_outcome = %s::jsonb "
+            f"WHERE {' AND '.join(scoped.conditions)}",
+            tuple([json.dumps(outcome), *scoped.params]),
+        )
+        self._conn.commit()
+        return result.rowcount > 0
+
     @staticmethod
     def _row_to_entry(r) -> DecisionLogEntry:
         return DecisionLogEntry(
