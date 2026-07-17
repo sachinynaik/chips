@@ -39,7 +39,10 @@ compressor = OllamaCompressor(base_url=os.environ["OLLAMA_BASE_URL"], model="qwe
 policy = PolicyLoader.from_file("cortex_policy.yaml")
 builder = BriefBuilder(conn, embedder, compressor, policy)
 
-brief = builder.build(task=task)
+# build_and_log is the production chokepoint: it persists the brief (cortex_briefs)
+# AND records the Foundation decision row (cortex_decision_log) — compile-AND-observe,
+# one decision row per brief. build() alone would persist the brief but skip the observation.
+brief = builder.build_and_log(task=task)
 
 print("============================================================")
 print(" CHIPS ContextBrief")
