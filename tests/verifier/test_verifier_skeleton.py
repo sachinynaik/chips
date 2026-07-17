@@ -37,30 +37,37 @@ def test_set_verifier_outcome_returns_false_for_unknown_id(conn):
 
 
 def test_run_once_labels_all_null_rows_unknown(conn):
+    # Tenant-scope this test's rows so run_once counts only them — run_once(None)
+    # labels EVERY unlabeled row in the shared DB (other tests' committed decision
+    # rows accumulate), which is correct behavior but makes a global count assertion
+    # non-deterministic across the full suite.
     repo = DecisionLogRepository(conn)
-    d1 = _make_decision(repo)
-    d2 = _make_decision(repo)
+    tid = f"verifier-skel-{uuid4()}"
+    d1 = _make_decision(repo, tenant_id=tid)
+    d2 = _make_decision(repo, tenant_id=tid)
 
     verifier = Verifier(conn)
-    count = verifier.run_once()
+    count = verifier.run_once(tenant_id=tid)
 
     assert count == 2
-    e1 = repo.get(d1)
-    e2 = repo.get(d2)
+    e1 = repo.get(d1, tenant_id=tid)
+    e2 = repo.get(d2, tenant_id=tid)
     assert e1.verifier_outcome == _UNKNOWN_OUTCOME
     assert e2.verifier_outcome == _UNKNOWN_OUTCOME
 
 
 def test_run_once_is_idempotent_on_replay(conn):
+    # Tenant-scoped so the counts reflect only this test's rows (see note above).
     repo = DecisionLogRepository(conn)
-    d1 = _make_decision(repo)
+    tid = f"verifier-replay-{uuid4()}"
+    d1 = _make_decision(repo, tenant_id=tid)
 
     verifier = Verifier(conn)
-    first_count = verifier.run_once()
-    entry_after_first = repo.get(d1)
+    first_count = verifier.run_once(tenant_id=tid)
+    entry_after_first = repo.get(d1, tenant_id=tid)
 
-    second_count = verifier.run_once()
-    entry_after_second = repo.get(d1)
+    second_count = verifier.run_once(tenant_id=tid)
+    entry_after_second = repo.get(d1, tenant_id=tid)
 
     assert first_count == 1
     assert second_count == 0
