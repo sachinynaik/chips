@@ -65,6 +65,24 @@ jobs:
             ln -s "$target" .flashrank_cache
           fi
 
+      - name: Persistent tiktoken cache
+        # The compressor's token counter calls tiktoken.get_encoding("cl100k_base"),
+        # which downloads a ~1.6MB BPE vocab on first use. Same failure mode as the
+        # flashrank model above: both CI passes start without it and re-download every
+        # run, and the download hard-times-out whenever WSL egress to the tiktoken CDN
+        # degrades (2026-07-17 blocked the local act gate after the flashrank fix).
+        # tiktoken honours TIKTOKEN_CACHE_DIR directly, so point it at the same
+        # persistent locations (act: the act-toolcache volume; runner: the runner home)
+        # and pre-seed the sha1-named blob there so the download never happens.
+        run: |
+          if [ -n "$ACT" ]; then
+            target="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}/tiktoken"
+          else
+            target="$HOME/.cache/tiktoken"
+          fi
+          mkdir -p "$target"
+          echo "TIKTOKEN_CACHE_DIR=$target" >> "$GITHUB_ENV"
+
       - name: Keep venv out of the checkout path (runner only)
         # A containerized step once left a root-owned .venv inside _work/, and the
         # next checkout's cleanup died on EACCES (2026-07-06, run 28754216463
