@@ -15,9 +15,14 @@ the chat repos it lets you track/understand the work. It is not in either servin
 
 - **Ollama** running natively in WSL on the GPU (RTX 4070 Ti SUPER): `ollama serve` on
   `127.0.0.1:11434`, models `nomic-embed-text` (embeddings) + `qwen2.5-coder:1.5b` (compression).
-- **chips-prod-postgres** container (port 5498) with one database per repo:
-  `chips_backend`, `chips_chat`, `chips_staec`, `chips_bproxy` (one DB per repo — see
-  known_limitations L13: the harvest cursor is global, so repos can't share a DB yet).
+- **chips-prod-postgres** container (port 5498) with one database per repo (one DB per repo —
+  see known_limitations L13: the harvest cursor is global, so repos can't share a DB yet).
+  **Harvested and demo-ready:** `chips_backend` (181 commits), `chips_staec` (216),
+  `chips_bproxy` (298). **`chips_chat` is provisioned but not yet harvested** —
+  spacemate_chat_system is large (1.1k commits) and its harvest is deferred; the N+1
+  cochange-entropy query pathology that made it crawl is fixed (memoized per-file read), so a
+  re-harvest is fast when we return to it. The chat/FAQ (#464) use case is already shown below
+  via staec (parking) + bproxy (building) + backend.
 - Pre-warm the compressor once before compiling briefs (first call cold-loads the model):
   `curl -s http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:1.5b","prompt":"warm","stream":false}' >/dev/null`
 
@@ -67,5 +72,7 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434 uv run python -m chips.mcp.bus
 
 - Retrieval/compile only — CHIPS does not verify determinism or run chat (sidecar, by design).
 - One DB per repo until the harvest path is tenant-scoped (known_limitations L13).
-- Harvest speed is ~2s/commit today (sequential per-commit signal computation + embed); a
-  batch-embed optimization is in review to cut that ~10x.
+- Harvest is per-commit signal computation + batched embed. Two large-repo pathologies were
+  fixed this cycle: co-change pairing is capped at 100 files/commit (a bulk/generated commit
+  no longer explodes into tens of millions of O(N²) pairs), and per-file co-change entropy is
+  memoized per batch (no more N+1 re-reads). Both are what make big repos harvestable.
