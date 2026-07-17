@@ -57,6 +57,16 @@ from chips.observability.tracing import start_span
 
 logger = logging.getLogger(__name__)
 
+# L6 follow-up: probe_runtime()/probe_workflow() are synchronous network calls
+# (1s/2s worst-case timeouts) that used to run on every build(). The module has
+# no other async code, so a bare asyncio.gather at this one call site would mean
+# wrapping two blocking (requests/psycopg) calls in a thread pool just to get
+# concurrency for a single pair of calls — more moving parts than the problem
+# warrants. A short TTL cache is the smaller, sync-shape-preserving fix: repeated
+# build() calls within the window reuse the last probe result instead of
+# re-probing. See docs/known_limitations.md L6.
+_PROBE_CACHE_TTL_SECONDS = 30.0
+
 
 def _normalized_finding(kind: str, item: dict) -> dict:
     """Identity-bearing fields of a soft finding, for the stable ``find:`` content hash.
@@ -262,6 +272,8 @@ class BriefBuilder:
         self._embedder = embedder
         self._compressor = compressor
         self._policy_loader = policy_loader
+        self._runtime_probe_cache: tuple[float, SourceStatus] | None = None
+        self._workflow_probe_cache: tuple[float, SourceStatus] | None = None
 
     def build(
         self,
@@ -455,6 +467,22 @@ class BriefBuilder:
             governor=governor,
         )
 
+    def _probe_cached(self, cache_attr: str, probe_fn) -> SourceStatus:
+        """Reuse a probe result for ``_PROBE_CACHE_TTL_SECONDS`` instead of re-probing.
+
+        L6: avoids paying the probe's network timeout on every ``build()`` call
+        when calls arrive faster than the source's staleness tolerance.
+        """
+        cached = getattr(self, cache_attr)
+        now = time.monotonic()
+        if cached is not None:
+            cached_at, status = cached
+            if now - cached_at < _PROBE_CACHE_TTL_SECONDS:
+                return status
+        status = probe_fn()
+        setattr(self, cache_attr, (now, status))
+        return status
+
     def _rank_and_assemble(
         self, scope: str | None, tenant_id: str | None, retrieval: _Retrieval
     ) -> _Assembly:
@@ -463,11 +491,11 @@ class BriefBuilder:
         diffs = retrieval.diffs
         structural_items = retrieval.structural_items
 
-        runtime_status = probe_runtime()
+        runtime_status = self._probe_cached("_runtime_probe_cache", probe_runtime)
         if runtime_status.status == "error":
             logger.warning("runtime source probe failed: %s", runtime_status.detail)
 
-        workflow_status = probe_workflow()
+        workflow_status = self._probe_cached("_workflow_probe_cache", probe_workflow)
         if workflow_status.status == "error":
             logger.warning("workflow source probe failed: %s", workflow_status.detail)
 

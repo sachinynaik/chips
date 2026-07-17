@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from chips.compiler.builder import BriefBuilder
-from chips.compiler.models import ContextBrief
+from chips.compiler.models import ContextBrief, SourceStatus
 
 
 def _make_embedder(vector: list[float] | None = None) -> MagicMock:
@@ -188,3 +188,48 @@ def test_build_raises_when_require_tenant_set_and_none_passed(conn, monkeypatch)
     monkeypatch.setenv("CHIPS_REQUIRE_TENANT_ID", "1")
     with pytest.raises(ValueError, match="CHIPS_REQUIRE_TENANT_ID"):
         BriefBuilder(conn, _make_embedder(), _make_compressor()).build("fix crash")
+
+
+# ── L6: source probes are cached with a short TTL (avoid re-probing every build) ──
+
+
+def test_build_probes_runtime_and_workflow_on_first_call(conn):
+    with patch(
+        "chips.compiler.builder.probe_runtime", return_value=SourceStatus(status="available")
+    ) as mock_runtime, patch(
+        "chips.compiler.builder.probe_workflow", return_value=SourceStatus(status="available")
+    ) as mock_workflow:
+        BriefBuilder(conn, _make_embedder(), _make_compressor()).build("fix auth")
+    mock_runtime.assert_called_once()
+    mock_workflow.assert_called_once()
+
+
+def test_build_does_not_reprobe_within_ttl_window(conn):
+    builder = BriefBuilder(conn, _make_embedder(), _make_compressor())
+    with patch(
+        "chips.compiler.builder.probe_runtime", return_value=SourceStatus(status="available")
+    ) as mock_runtime, patch(
+        "chips.compiler.builder.probe_workflow", return_value=SourceStatus(status="available")
+    ) as mock_workflow:
+        builder.build("fix auth")
+        builder.build("fix auth again")
+    mock_runtime.assert_called_once()
+    mock_workflow.assert_called_once()
+
+
+def test_build_reprobes_after_ttl_expires(conn, monkeypatch):
+    builder = BriefBuilder(conn, _make_embedder(), _make_compressor())
+    fake_now = [1000.0]
+    monkeypatch.setattr(
+        "chips.compiler.builder.time.monotonic", lambda: fake_now[0]
+    )
+    with patch(
+        "chips.compiler.builder.probe_runtime", return_value=SourceStatus(status="available")
+    ) as mock_runtime, patch(
+        "chips.compiler.builder.probe_workflow", return_value=SourceStatus(status="available")
+    ) as mock_workflow:
+        builder.build("fix auth")
+        fake_now[0] += 31.0  # past the 30s TTL
+        builder.build("fix auth again")
+    assert mock_runtime.call_count == 2
+    assert mock_workflow.call_count == 2

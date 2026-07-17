@@ -1,5 +1,72 @@
 """Git reader unit tests — no DB required."""
-from chips.harvester.git_reader import GitReader, CommitRecord
+import shutil
+import tempfile
+from pathlib import Path
+
+import git
+import pytest
+
+from chips.harvester.git_reader import (
+    GitReader,
+    CommitRecord,
+    _MAX_FILES_FOR_COCHANGE,
+)
+
+
+@pytest.fixture
+def local_repo_dir():
+    # Create the throwaway repo under container-local /tmp (via TMPDIR), NOT the
+    # pytest tmp dir — which in this harness lands on the mounted /app volume
+    # where files carry a foreign uid and trip git's dubious-ownership guard.
+    # A container-local, process-owned path sidesteps that with no git-config change.
+    path = tempfile.mkdtemp(prefix="chips_gitreader_")
+    try:
+        yield Path(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _make_repo(path):
+    repo = git.Repo.init(path)
+    with repo.config_writer() as cw:
+        cw.set_value("user", "name", "Tester")
+        cw.set_value("user", "email", "tester@example.com")
+    return repo
+
+
+def test_commits_since_parses_every_real_commit_with_files(local_repo_dir):
+    """Regression: commits_since() must emit the ===/--- separators _parse_log
+    expects. The format string previously lacked them, so `git log` output had
+    no separators, the whole log parsed as one block, and only the first commit
+    (with no files) was returned — the harvester silently ingested 1 commit per
+    repo. The _parse_log unit tests missed it because they fed pre-separated
+    sample text, never exercising commits_since against real git."""
+    repo = _make_repo(local_repo_dir)
+    (local_repo_dir / "a.py").write_text("1\n")
+    repo.index.add(["a.py"])
+    repo.index.commit("first commit")
+    (local_repo_dir / "b.py").write_text("2\n")
+    (local_repo_dir / "c.py").write_text("3\n")
+    repo.index.add(["b.py", "c.py"])
+    repo.index.commit("second commit")
+
+    commits = GitReader(str(local_repo_dir)).commits_since()
+
+    assert len(commits) == 2
+    assert {c.message for c in commits} == {"first commit", "second commit"}
+    second = next(c for c in commits if c.message == "second commit")
+    assert set(second.files_changed) == {"b.py", "c.py"}
+
+
+def test_commits_since_respects_limit(local_repo_dir):
+    repo = _make_repo(local_repo_dir)
+    for i in range(5):
+        (local_repo_dir / f"f{i}.py").write_text(f"{i}\n")
+        repo.index.add([f"f{i}.py"])
+        repo.index.commit(f"commit {i}")
+
+    commits = GitReader(str(local_repo_dir)).commits_since(limit=3)
+    assert len(commits) == 3
 
 
 GIT_LOG_SAMPLE = """\
@@ -66,6 +133,44 @@ def test_cochange_frequency_increments_for_repeated_pairs():
     }
     key = tuple(sorted(["src/valet/checkout.py", "src/valet/tests/test_checkout.py"]))
     assert freq[key] == 2
+
+
+def test_compute_cochange_pairs_skips_bulk_commits():
+    # A bulk commit (mass import / codegen dump) touching more files than the
+    # cap must contribute ZERO co-change pairs: those files did not meaningfully
+    # co-evolve, and pairing them is O(N^2) — one 8.9k-file commit implies ~40M
+    # pairs. A normal focused commit still pairs as usual.
+    reader = GitReader.__new__(GitReader)
+    bulk_files = [f"gen/bulk_{i}.py" for i in range(_MAX_FILES_FOR_COCHANGE + 5)]
+    commits = [
+        CommitRecord(sha="bulk", author="A", committed_at="2026-05-01T00:00:00",
+                     message="mass import", files_changed=bulk_files),
+        CommitRecord(sha="focused", author="A", committed_at="2026-05-02T00:00:00",
+                     message="fix", files_changed=["src/a.py", "src/b.py"]),
+    ]
+    pairs = reader._compute_cochange_pairs(commits)
+    pair_set = {tuple(sorted([a, b])) for a, b, _ in pairs}
+    assert pair_set == {("src/a.py", "src/b.py")}
+
+
+def test_compute_file_signals_counts_bulk_churn_but_skips_bulk_cochange():
+    # Churn must still be counted for every file in a bulk commit (the file DID
+    # change), but the O(N^2) co-change pairing is skipped, so a file that only
+    # ever appears in bulk commits has zero co-change entropy. Two identical bulk
+    # commits would otherwise give every pair frequency 2 (clearing min-support)
+    # and near-maximal entropy — this proves the cap suppresses that noise.
+    reader = GitReader.__new__(GitReader)
+    bulk_files = [f"gen/bulk_{i}.py" for i in range(_MAX_FILES_FOR_COCHANGE + 5)]
+    commits = [
+        CommitRecord(sha="bulk1", author="A", committed_at="2026-05-01T00:00:00",
+                     message="dump", files_changed=bulk_files),
+        CommitRecord(sha="bulk2", author="A", committed_at="2026-05-02T00:00:00",
+                     message="dump", files_changed=bulk_files),
+    ]
+    signals = reader._compute_file_signals(commits)
+    by_file = {s.file_path: s for s in signals}
+    assert by_file["gen/bulk_0.py"].churn_count == 2
+    assert by_file["gen/bulk_0.py"].cochange_entropy == 0.0
 
 
 def test_compute_file_churn():

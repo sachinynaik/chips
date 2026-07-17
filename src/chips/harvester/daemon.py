@@ -14,6 +14,11 @@ from chips.memory.repository import MemoryRepository
 
 logger = logging.getLogger(__name__)
 
+# Number of commit contents sent to the embedder per embed_batch() call. Keeps
+# a huge backfill from sending one giant HTTP request while still collapsing
+# what used to be one round-trip per commit into a handful of round-trips.
+_EMBED_BATCH_SIZE = 64
+
 
 class HarvesterDaemon:
     def __init__(
@@ -51,17 +56,24 @@ class HarvesterDaemon:
         GitIngestion(self._harvester_store).ingest_commits(commits)
 
         repo = MemoryRepository(self._conn)
-        count = 0
+        records = []
         for commit in commits:
             record = self._extractor.extract(commit)
             if record is None:
                 continue
-            record.embedding = self._embedder.embed(record.content)
+            records.append(record)
+
+        for start in range(0, len(records), _EMBED_BATCH_SIZE):
+            chunk = records[start : start + _EMBED_BATCH_SIZE]
+            embeddings = self._embedder.embed_batch([r.content for r in chunk])
+            for record, embedding in zip(chunk, embeddings):
+                record.embedding = embedding
+
+        for record in records:
             repo.insert(record)
-            count += 1
 
         self._conn.commit()
-        return count
+        return len(records)
 
     def run(self) -> None:
         """Poll indefinitely, processing new commits each cycle."""

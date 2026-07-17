@@ -38,6 +38,7 @@ class OllamaCompressor:
         num_predict: int = 200,
         max_items: int = 20,
         tiktoken_encoding: str = _DEFAULT_TIKTOKEN_ENCODING,
+        timeout: float = 120.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
@@ -46,6 +47,10 @@ class OllamaCompressor:
         self._num_predict = num_predict
         self._max_items = max_items
         self._count_tokens = _build_token_counter(tiktoken_encoding)
+        # A cold qwen load / Ollama contention can exceed a tight timeout; be
+        # generous so the compressor produces a real summary instead of silently
+        # falling back to raw item text. Override per call site if needed.
+        self._timeout = timeout
 
     def compress(
         self,
@@ -179,7 +184,7 @@ class OllamaCompressor:
         trimmed = self._trim_soft_items(soft_items)
         prompt = self._build_prompt(task, trimmed)
         try:
-            with httpx.Client(timeout=30.0) as client:
+            with httpx.Client(timeout=self._timeout) as client:
                 resp = client.post(
                     f"{self._base_url}/api/generate",
                     json={
